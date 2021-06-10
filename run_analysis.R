@@ -9,13 +9,9 @@ library(stringr)
 library(readr)
 library(writexl)
 library(ggplot2)
-library(MASS)
-# library(Rsamtools)
-# library(GenomicRanges)
 library(DESeq2)
-# library(multcomp)
-# library(mda)
-# library(gplots)
+library(multcomp)
+library(MASS)
 library(conflicted)
 
 # avoid function conflicts
@@ -36,10 +32,10 @@ source("src/functions.R")
 mainDir = getwd()
 
 # processed data directory
-dataDir = paste0(mainDir, 'data/processed/') ; dir.create(dataDir, recursive = TRUE)
+dataDir = paste0(mainDir, '/data/processed/') ; dir.create(dataDir, recursive = TRUE)
 
 # output directories
-outDir = paste0(mainDir, 'output/')
+outDir = paste0(mainDir, '/output/')
 tabDir = paste0(outDir, 'tables/') ; dir.create(tabDir, recursive = TRUE)
 figDir = paste0(outDir, 'figs/') ; dir.create(figDir, recursive = TRUE)
 
@@ -54,112 +50,192 @@ tmpDir = "/local_scratch/malvarez/chrysper/tmp/"
 rawPath = "/g/strcombio/fsupek_data/CRISPR/"
 
 
-### load tables of raw read counts (3 different experiments)
+### load tables of raw read counts and info from 3 different experiments
 
+############################################
 ## our APOBEC3A experiment
 # cell lines --> A549, LXF289, H358
 # treatments --> DOX (A3A active) vs. control -- some also have ATRi
 # altered genotypes --> TP53-KO, TP53-mut, HMCES-KO
+
 A3A_Dir = paste0(rawPath, "2_processed_data/apobec/MAGeCK_MLE_analyses/raw_counts_combined/")
+
+# load raw counts table
 A3A_raw_counts = vroom(paste0(A3A_Dir, "A549_LXF289_H358__raw_counts.tsv")) %>%
-  as.matrix()
+  #sum counts across LANES of the same experiment
+  group_by(sgRNA,Gene,sample_id,TP53,A3A,treatment,time) %>% 
+  summarise_all(dplyr::funs(sum)) %>%
+  
 # load sample info 
 A3A_sampleinfo = vroom(paste0(A3A_Dir, "sampleinfo.tsv"))
-# more info
-#/g/strcombio/fsupek_data/CRISPR/1_raw_data/0_INFO/paths_info_A549_LXF289_H358.xlsx
 
-## Travis' ATRi/TMZ experiment
+# more info
+# see /g/strcombio/fsupek_data/CRISPR/1_raw_data/0_INFO/paths_info_A549_LXF289_H358.xlsx
+############################################
+
+############################################
+## Travis lab's ATRi/TMZ experiment
 # cell lines --> SW480, SW620, HT29
 # treatments --> ATRi, TMZ vs. control
 # altered genotypes --> ARID1A-KO, MSH6-KO
-ATRi_TMZ_Dir = paste0(rawPath, "/g/strcombio/fsupek_data/CRISPR/3_reports/stracker_lab/isabel_ATRi_TMZ/raw_counts_combined/")
+
+ATRi_TMZ_Dir = paste0(rawPath, "3_reports/stracker_lab/isabel_ATRi_TMZ/raw_counts_combined/")
+
+# load raw counts table
 ATRi_TMZ_raw_counts = vroom(paste0(ATRi_TMZ_Dir, "SW480_SW620_HT29__ARID1A_MSH6__raw_counts.tsv")) %>%
-  as.matrix()
+  #sum counts across LANES of the same experiment
+  
+
 # load sample info 
 ATRi_TMZ_sampleinfo = vroom(paste0(ATRi_TMZ_Dir, "sampleinfo.tsv"))
+
 # more info
 #readLines("/g/strcombio/fsupek_data/CRISPR/1_raw_data/0_INFO/paths_info_isabel.txt")
+############################################
 
+############################################
 ## Jain et al oxygen experiment
 # cell lines --> K562
 # treatment --> oxygen concentration 21%, 5%, 1%
+
 oxygen_Dir = paste0(rawPath, "4_resources/public_CRISPR_raw_counts/K562_oxygen_jain/")
-oxygen_raw_counts = vroom(paste0(oxygen_Dir, "raw_counts.tsv")) %>%
-  as.matrix()
+
+# load raw counts table
+oxygen_raw_counts = vroom(paste0(oxygen_Dir, "raw_counts.tsv"))
+
 # load sample info 
 oxygen_sampleinfo = vroom(paste0(oxygen_Dir, "sampleinfo.tsv"))
+
 # more info
 #readLines(paste0(oxygen_Dir, "README"))
+############################################
 
 
 ### load sgRNAs library (Brunello)
 grna_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/original/broadgpp-brunello-library-contents_gRNAs.tsv")) %>%
   rename("gene" = "Target Gene Symbol") %>%
-  select(sgRNA, gene, "sgRNA Target Sequence", "Target Context Sequence", "PAM Sequence", "Strand", "Genomic Sequence", "Position of Base After Cut (1-based)") %>%
+  # combine sgRNA and gene into an id
+  unite(col = "id", sgRNA, gene, sep = "__", remove = F) %>%
+  # keep interesting columns
+  select(id, sgRNA, gene, "sgRNA Target Sequence", "Target Context Sequence", "PAM Sequence", "Strand", "Genomic Sequence", "Position of Base After Cut (1-based)") %>%
+  # sort by chromosome and cut position
   arrange(`Genomic Sequence`, `Position of Base After Cut (1-based)`)
 
 
 
-### normalize count matrix 
+#### normalize count matrix 
 
-## working only with APOBEC3A data for the moment
+### working only with APOBEC3A data for the moment
 
-## varianceStabilizingTransformation
-vst = varianceStabilizingTransformation(A3A_raw_counts)
-
-# print normalized sample distributions
-pdf(paste0(figDir, "normalization.pdf"), width=15, height=6)
-par(mfrow=c(1,1))
-boxplot(vst, outline=F, las=2, main="vst")
-dev.off()
-
-
-## create Biobase's 'ExpressionSets' (esets)
-eset = new("ExpressionSet", exprs=vst)
-pData(eset) = sampleinfo[match(colnames(eset), sampleinfo$sampleName),]
-eset$group = factor(eset$group)
-rownames(eset) = rownames(mat)
-fData(eset) = grna_library[rownames(eset), ]
-
-save(eset, file=paste0(dataDir, "eset.RData"))
-#load(file=paste0(dataDir, "eset.RData"))
+## varianceStabilizingTransformation --> normalizes read counts across samples
+vst = A3A_raw_counts %>%
+  # combine sgRNA and gene into an id
+  unite(col = "id", sgRNA, gene, sep = "__") %>%
+  # id to row names
+  column_to_rownames("id") %>%
+  # vst requires a matrix object
+  as.matrix() %>%
+  # run vst
+  varianceStabilizingTransformation()
 
 
-## PCAs
-pr = prcomp(t(exprs(eset)))
-pcvar = round(pr$sdev^2/sum(pr$sdev^2)*100, 2)
+## print normalized sample distributions
 
-pdf(paste0(figDir, "pca.", i, ".pdf"), width=9, height=9)
-par(mfrow=c(3, 3))
-for(i in 2:3){
-  plot(pr$x[,1], pr$x[,i], col=rainbow(5)[eset$group], xlab=paste0("PC1 (", pcvar[1], "%)"), ylab=paste0("PC", i, " (", pcvar[i], "%)"))
-  text(pr$x[,1], pr$x[,i], labels=eset$sampleName, pos=4, cex=0.6, col=rainbow(5)[eset$group], srt=90)
-}
-plot(pr$x[,1], apply(exprs(eset), 2, median), col=rainbow(5)[eset$group], xlab=paste0("PC1 (", pcvar[1], "%)"), ylab="Col medians")
-plot(pr$x[,1], colSums(mat), col=rainbow(5)[eset$group], xlab=paste0("PC1 (", pcvar[1], "%)"), ylab="Col sums")
-plot(pr$x[,2], colSums(mat), col=rainbow(5)[eset$group], xlab=paste0("PC2 (", pcvar[2], "%)"), ylab="Col sums")
-plot(pr$x[,3], colSums(mat), col=rainbow(5)[eset$group], xlab=paste0("PC3 (", pcvar[3], "%)"), ylab="Col sums")
-plot(pr$x[,1], colMeans(mat == 0), col=rainbow(5)[eset$group], xlab=paste0("PC1 (", pcvar[1], "%)"), ylab="% zeros")
-plot(pr$x[,2], colMeans(mat), col=rainbow(5)[eset$group], xlab=paste0("PC2 (", pcvar[2], "%)"), ylab="% zeros")
-plot(pr$x[,3], colMeans(mat), col=rainbow(5)[eset$group], xlab=paste0("PC3 (", pcvar[3], "%)"), ylab="% zeros")
-dev.off()
+# input format for ggplot
+vst_plot_input =  vst %>%
+  as.data.frame() %>%
+  gather(key = sample,
+         value = `vst-normalized sgRNA counts`) %>%
+  # cell line / genotype variable
+  mutate(group = sub("_.*", "", sample),
+         group = sub("^[0-9]", "", group),
+         group = sub("^[0-9]", "", group))
+# fix sample order
+vst_plot_input$sample = factor(vst_plot_input$sample,
+                               ordered = TRUE,
+                               levels = A3A_sampleinfo$sample)
+
+## ggplot
+boxplot = ggplot(data = vst_plot_input,
+                 aes(x = sample,
+                     y = `vst-normalized sgRNA counts`,
+                     fill = factor(group))) +
+  geom_boxplot(lwd = 0.1,
+               outlier.size = 0.2,
+               outlier.stroke = 0.2) +
+  ggtitle("sgRNA read counts -- vst normalized -- A3A experiment") +
+  xlab("") +
+  theme_minimal() +
+  theme(axis.title.y = element_text(size = 6),
+        axis.text.x = element_text(size = 3,
+                                   angle = 45,
+                                   hjust = 1,
+                                   vjust = 1.2),
+        axis.text.y = element_text(size = 6),
+        plot.title = element_text(hjust = 0.5,
+                                  size = 8),
+        legend.position="none")
+
+# save to file
+ggsave(paste0(figDir,
+              "vst_normalized_grna_counts_A3A.jpg"),
+       plot = boxplot,
+       device = "jpg",
+       width = 10,
+       height = 5.6,
+       dpi = 300)
 
 
 
-### differential lethality
+## store vst data as Biobase's 'ExpressionSets' (esets)
+eset = new("ExpressionSet", exprs = vst)
 
-sampleNames(eset) = eset$sampleName
-eset$mouse[13:16] = 10:13
-colnames(fData(eset))[2] = "gene"
-eset = eset[!is.na(fData(eset)$gene),]
-eset$treatment[13:14] = "NA"; eset$treatment[16] = "drug treatment"; eset$treatment = as.factor(eset$treatment)
+# add sample info
+pData(eset) = A3A_sampleinfo[match(colnames(eset), A3A_sampleinfo$sample),]
+rownames(eset) = rownames(vst)
+sampleNames(eset) = eset$sample
 
-# contrasts
-conts =  mcp(group = c("tumor_untreated - tcbt_NA = 0",
-                       "tumor_drugtreatment - tcbt_NA = 0",
-                       "tumor_drugtreatment - tumor_untreated = 0"))
+# set categorical variables as factors (unordered ('dummy' contrasts), except treatment)
+eset$cell_line = factor(eset$cell_line)
+eset$TP53 = factor(eset$TP53,
+                   ordered = FALSE,
+                   levels = c("wt", "mut", "KO"))
+eset$HMCES = factor(eset$HMCES,
+                    ordered = FALSE,
+                    levels = c("wt", "KO"))
+eset$A3A_vector = factor(eset$A3A_vector,
+                         ordered = FALSE,
+                         levels = c("no", "yes"))
+eset$treatment = factor(eset$treatment,
+                        ordered = TRUE,
+                        levels = c("no", "DOX_IC25", "DOX_IC50", "DOX_ATRi"))
+eset$replicate = factor(eset$replicate)
 
-## run NB regression (loop across gene names)
+## set BACKWARD difference contrast matrices to use with ordered factors in the regression
+# contrasts for treatment
+contrast_matrix_four_levels =  matrix(c(-3/4,  1/4,  1/4, 1/4,
+                                        -2/4, -2/4,  2/4, 2/4,
+                                        -1/4, -1/4, -1/4, 3/4),
+                                      ncol = 3,
+                                      dimnames = list(c("no", "DOX_IC25", "DOX_IC50", "DOX_ATRi"),
+                                                      c("DOX_IC25-vs-control", "DOX_IC50-vs-DOX_IC25", "DOX_ATRi-vs-DOX_IC50")))
+contrasts(eset$treatment) <- contrast_matrix_four_levels
+
+
+# add library info
+fData(eset) = grna_library %>%
+  filter(id %in% rownames(eset))
+
+
+## save processed data
+save(eset,
+     file = paste0(dataDir, "eset_A3A.RData"))
+# load it to save time
+#load(file = paste0(dataDir, "eset_A3A.RData"))
+
+
+
+### run NB regression (loop across gene names)
 allres = mclapply(unique(fData(eset)$gene), function(g){
   df = buildDF(g, eset, ref="tcbt_NA", cond="group")
   y = fitModel(df, conts, cond="group")
@@ -168,6 +244,7 @@ allres = mclapply(unique(fData(eset)$gene), function(g){
 }, mc.cores=30)
 names(allres) = unique(fData(eset)$gene)
 
+# save processed data
 save(allres, file=paste0(dataDir, "allres.RData"))
 
 ## parse results
