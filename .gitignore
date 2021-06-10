@@ -1,3 +1,4 @@
 data/
-resources/
 output/
+resources/
+.Rhistory
