@@ -1,5 +1,5 @@
 # REQUIRED - git global setup
-git config --global user.name "Miguel M Álvarez" # your gitlab name here
+git config --global user.name "NAME SURNAME" # your gitlab name here
 
 git config --global user.email "NAME.SURNAME@irbbarcelona.org" # your e-mail here
 
