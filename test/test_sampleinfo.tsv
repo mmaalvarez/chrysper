@@ -1,0 +1,8 @@
+sample	id	cell_line	TP53	HMCES	A3A_vector	treatment	time	replicate
+1A_p53KO_A3A_t0	1A	A549	KO	wt	yes	no	0	1
+4A_p53KO_A3A_woDOX_t9	4A	A549	KO	wt	yes	no	9	1
+6A_p53KO_A3A_woDOX_t15	6A	A549	KO	wt	yes	no	15	1
+9A_p53KO_A3A_DOX_t9	9A	A549	KO	wt	yes	DOX_IC25	9	1
+11A_p53KO_A3A_DOX_t15	11A	A549	KO	wt	yes	DOX_IC25	15	1
+14A_p53KO_A3A_DOX_ATRi_t9	14A	A549	KO	wt	yes	DOX_ATRi	9	1
+16A_p53KO_A3A_DOX_ATRi_t15	16A	A549	KO	wt	yes	DOX_ATRi	15	1

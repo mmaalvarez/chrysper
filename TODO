@@ -1,5 +1,3 @@
-set time as factor, levels 
-0
-early
-middle
-late
+- Parse NB results
+
+- Detect gene hits
