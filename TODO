@@ -1,3 +1,14 @@
-- Parse NB results
+- Try with
+	- different datasets
+	- different sgRNA counts normalization approach
+	- different condition level grouping
+	- different condition interactions
+	- different controlling factors
+	- different regression models
+
+
+- Parse regression results
 
 - Detect gene hits
+
+- Descriptive plots for gene hits
