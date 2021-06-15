@@ -1,8 +1,10 @@
 # REQUIRED - git global setup
 git config --global user.name "Miguel M Álvarez" # your gitlab name here
 
-git config --global user.email "miguelmartin.alvarez@irbbarcelona.org" # your e-mail here
+git config --global user.email "NAME.SURNAME@irbbarcelona.org" # your e-mail here
 
+
+-----------------------------------------------------------------------------------
 
 
 ## update existing repository
@@ -26,6 +28,7 @@ git push -u origin master
 git log --pretty="- %s" > CHANGELOG
 
 
+------------------------------------------------------------------------------------
 
 
 ## clone existing repo into local
