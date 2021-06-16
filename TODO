@@ -10,5 +10,6 @@
 - Parse regression results
 
 - Detect gene hits
+	- different filtering criteria
 
 - Descriptive plots for gene hits

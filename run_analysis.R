@@ -11,6 +11,10 @@ library(ggplot2)
 library(gplots)
 library(ggpubr)
 library(MASS)
+library(purr)
+library(broom)
+library(stringr)
+library(safejoin)
 library(data.table)
 library(readr)
 
@@ -20,7 +24,7 @@ conflict_prefer("rename", "dplyr")
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
 conflict_prefer("melt", "data.table")
-
+conflict_prefer("desc", "dplyr")
 
 
 
@@ -383,22 +387,74 @@ save(NBres, file = paste0(dataDir, "NBres.RData"))
 
 #### parse NB results
 
-## merge NB results for all genes
-allres = ""
+## merge all genes results (i.e. the elements from NBres list) into megatable 'allres'
 
-## correct p-values (FDR)
+# apply broom::tidy() to each gene from NBres
+NBres_tidy = NBres %>%
+  map(., ~tidy(.x$model)) %>%
+  # remove sgRNA rows
+  map(., ~filter(.x, ! str_detect(term, "sgRNAs")))
 
+# now merge NB results for all genes
+allres = eat(NBres_tidy[[1]],
+             NBres_tidy[-1],
+             .by = "term") %>%
+  # the first dataset's variables remained unchanged, so append dataset name to them
+  rename_with(.fn = ~paste0(names(NBres_tidy)[1],
+                            "_estimate"),
+              .cols = all_of("estimate")) %>%
+  rename_with(.fn = ~paste0(names(NBres_tidy)[1],
+                            "_std.error"),
+              .cols = all_of("std.error")) %>%
+  rename_with(.fn = ~paste0(names(NBres_tidy)[1],
+                            "_statistic"),
+              .cols = all_of("statistic")) %>%
+  rename_with(.fn = ~paste0(names(NBres_tidy)[1],
+                            "_p.value"),
+              .cols = all_of("p.value")) %>%
+  # long format, by term
+  gather(key = "estimate.SE.stat.pval",
+         value = "value",
+         -term) %>%
+  # split 'estimate.SE.stat.pval' into 'estimate.SE.stat.pval' and 'gene' columns
+  separate(estimate.SE.stat.pval,
+           c("gene",
+             "estimate.SE.stat.pval"),
+           sep = "\\_") %>%
+  # one column estimate, one column SE, another statistic, another p.value
+  pivot_wider(names_from = c(estimate.SE.stat.pval),
+                     values_from = c(value)) %>%
+  # remove NA rows
+  na.omit() %>%
+  # remove intercepts
+  filter(term != "(Intercept)") %>%
+  # add column with the condition tested (e.g. treatment_recatDOX_IC25-vs-control.. is "treatment") OR if it is interaction (contains ":")
+  mutate(condition = ifelse(str_detect(term, "\\:"),
+                            yes = "interaction",
+                            no = gsub("_.*",
+                                       "",
+                                       term))) %>%
+  # correct p-values (FDR)
+  mutate(fdr = p.adjust(p.value,
+                        method = "BH")) %>%
+  # order and sort
+  select(gene, condition, term, estimate, std.error, statistic, p.value, fdr) %>%
+  arrange(fdr, p.value)
+  
 ## write table to file
 write_tsv(allres,
           paste0(tabDir, "results.tsv"))
 
 
 
-#### detect top 50 genes
-# some significant treatment_recat<level>:time_cat<level>, e.g. |Estimate|>4 & FDRs<0.05
-# sorted by max(|Estimate|)
+#### detect top gene hits
 
-hits = ""
+hits = allres %>%
+  # some filters for significance, e.g. |estimate|>4 & FDRs<0.05
+  filter(abs(estimate) > 0.001 &
+           fdr < 0.95) %>%
+  # sorted by e.g. descending |estimate|
+  arrange(desc(abs(estimate)))
 
 
 ## plot hits
