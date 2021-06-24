@@ -112,7 +112,7 @@ sampleinfo = vroom(paste0(ATRi_TMZ_Dir, "sampleinfo.tsv"))
 # cell lines --> K562
 # treatment --> oxygen concentration 21%, 5%, 1%
 
-oxygen_Dir = paste0(rawPath, "4_resources/public_CRISPR_raw_counts/K562_oxygen_jain/")
+oxygen_Dir = paste0(rawPath, "4_resources/public_CRISPR_data/1_raw_data/K562_oxygen_jain/")
 
 # load raw counts table
 raw_counts = vroom(paste0(oxygen_Dir, "raw_counts.tsv"))
