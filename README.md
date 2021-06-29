@@ -1,12 +1,16 @@
 # chrysper
 
-Negative Binomial regression of the form
+Generalized Linear Model (family Negative Binomial)
 
-`read_counts ~ treatment*time + other_factors + offset`
+Regression: 
+`geneKO read counts ~ treatment*time + control variables + offset + ε`
 
-to see what type of interaction there is between a drug treatment and its duration: how fast it works, etc.
+A treatment that kills the tumor gradually is better for the patient than a treatment that kills the tumor too fast.
+
+In this line, we want to detect with which gene knockouts there is a strong interaction between a (drug) treatment and its duration -- and if so, check the changes in cell death rate (or positive selection) along time (steady or sudden changes), whether there is monotonicity or not, etc.
 
 
+# Cat
 Tenim unes dades de CRISPR/Cas9 screening, que es resumeixen en uns "counts" dels quals l'abundància es correspon amb quant "dolent" or "beneficiós" és perdre un determinat gen per les cèl.lules (tumorals) d'un cultiu. És a dir, si inactivar un determinat gen a una d'aquestes cèl.lules és dolent per ella i la seva descendència (perquè per exemple pot ser un gen important per a la seva supervivència), doncs aquesta cèl.lula morirà o tindrà poca descendència, i llavors als resultats de l'anàlisi veurem pocs "counts" procedents d'aquesta cèl.lula (perquè n'hi haurà poques descendents al cultiu) comparat amb els counts de la resta de cèl.lules que tenen altres gens inactivats.
 
 A més, tenim dades de cultius els quals s'han tractat amb un fàrmac antitumoral, i d'altres sense tractament (control).

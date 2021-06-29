@@ -4,14 +4,14 @@
 
 	- different sgRNA counts normalization approach
 
-		- maybe use this set of nonessential genes for the NB offset, instead of the nontargeting grnas:
+		- another option is to use this set of nonessential genes for the NB offset, instead of the nontargeting grnas:
 			/g/strcombio/fsupek_data/CRISPR/4_resources/genes_info/essentiality/core_sets/nonessential/mageck/mageck_nonessential_genes_count_normalization.txt
 
 	- different condition level grouping
 
 	- different condition interactions
 
-	- different controlling factors
+	- different control variables
 
 	- different regression models (mixed?)
 
@@ -27,7 +27,7 @@
 
 				- need descriptive plots for gene hits
 
-		- could try also a single analysis with all genes
+		- could try also a single analysis with all genes included (just for completeness)?
 
 			- detects the interaction of treatment*time in the overall tumor
 
