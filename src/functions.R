@@ -3,7 +3,7 @@
 buildDF = function(g, eset, conditions, offset){
   
   # extract gene from eset
-  x = eset[fData(eset)$gene == g, ]
+  x = eset[fData(eset)$gene == g, ]  # gene --> Target_Gene_Symbol
   
   # initialize data frame (counts, sgRNA, gene, sample)
   df = data.frame(counts = as.vector(exprs(x)),
@@ -66,7 +66,7 @@ fitModel = function(g, eset, conditions, df){
                  lower.tail = F)
   
   ## count means at each condition level
-  x = eset[fData(eset)$gene == g, ]
+  x = eset[fData(eset)$gene == g, ]         #### canvi gene --> Target_Gene_Symbol
   means = list()
   for (condition in conditions){
     condition_column = pData(x)[df$sample, condition]
@@ -77,12 +77,14 @@ fitModel = function(g, eset, conditions, df){
       means[[condition]] = factor_means
     }
   }
-  # convert list of means into data frame
-  means = melt(means,
-               value.name = "count_means",
-               varnames = c('level')) %>%
-    rename("condition" = "L1") %>%
-    select(condition, level, count_means)
+  # # convert list of means into data frame
+  # means_DT=as.data.table(means) # added by me
+  # means = melt(means_DT,
+  #              value.name = "count_means",
+  #              varnames = c('level')) %>%
+  #   #rename("condition" = "L1") %>%
+  #   select(condition, level, count_means)
+  # print(means)
   
   ## merge df with fitted counts for later checking real vs. fitted counts, we want them to be similar. Also extract experiment group as "id"
   df %<>%

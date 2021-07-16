@@ -1,4 +1,3 @@
-
 #### load libraries
 library(vroom)
 library(magrittr)
@@ -11,12 +10,17 @@ library(ggplot2)
 library(gplots)
 library(ggpubr)
 library(MASS)
-library(purr)
+library(purrr)
 library(broom)
 library(stringr)
 library(safejoin)
 library(data.table)
+library(effects)          # plot interaction terms
 library(readr)
+library(safejoin)
+library(devtools)
+library(sjmisc)           # for plot_model function
+library(sjPlot)           # for plot_model function
 
 # resolve function conflicts
 library(conflicted)
@@ -53,13 +57,13 @@ tmpDir = "/local_scratch/malvarez/chrysper/tmp/"
 ### a) testing dataset (few samples and genes)
 
 ## test raw counts table
-raw_counts = vroom("test/test_raw_counts.tsv")
+raw_counts_t = vroom("test/test_raw_counts.tsv")
 
 ## test sample info 
-sampleinfo = vroom("test/test_sampleinfo.tsv")
+sampleinfo_t = vroom("test/test_sampleinfo.tsv")
 
 ## test sgRNA library
-grna_library = vroom("test/test_grna_library.tsv")
+grna_library_t = vroom("test/test_grna_library.tsv")
 
 
 
@@ -70,7 +74,7 @@ rawPath = "/g/strcombio/fsupek_data/CRISPR/"
 
 
 ######################################################################################################
-## i) our APOBEC3A experiment
+## i) our APOBEC3A experiment (A3A)
 # cell lines --> A549, LXF289, H358
 # treatments --> DOX (A3A active) vs. control -- some also have ATRi
 # altered genotypes --> TP53-KO, TP53-mut, HMCES-KO
@@ -78,10 +82,10 @@ rawPath = "/g/strcombio/fsupek_data/CRISPR/"
 A3A_Dir = paste0(rawPath, "2_processed_data/apobec/MAGeCK_MLE_analyses/raw_counts_combined/")
 
 # load raw counts table
-raw_counts = vroom(paste0(A3A_Dir, "A549_LXF289_H358__raw_counts.tsv"))
-  
+raw_counts_A3A = vroom(paste0(A3A_Dir, "A549_LXF289_H358__raw_counts.tsv"))
+
 # load sample info 
-sampleinfo = vroom(paste0(A3A_Dir, "sampleinfo.tsv"))
+sampleinfo_A3A = vroom(paste0(A3A_Dir, "sampleinfo.tsv"))
 
 # more info
 # see /g/strcombio/fsupek_data/CRISPR/1_raw_data/0_INFO/paths_info_A549_LXF289_H358.xlsx
@@ -112,10 +116,11 @@ sampleinfo = vroom(paste0(ATRi_TMZ_Dir, "sampleinfo.tsv"))
 # cell lines --> K562
 # treatment --> oxygen concentration 21%, 5%, 1%
 
-oxygen_Dir = paste0(rawPath, "4_resources/public_CRISPR_data/1_raw_data/K562_oxygen_jain/")
+
+oxygen_Dir = "/g/strcombio/fsupek_cancer3/malvarez/public_CRISPR_data/1_raw_data/K562_oxygen_jain/"
 
 # load raw counts table
-raw_counts = vroom(paste0(oxygen_Dir, "raw_counts.tsv"))
+raw_counts = vroom(paste0(oxygen_Dir, "raw_counts.tsv")) # overwriting variables?
 
 # load sample info 
 sampleinfo = vroom(paste0(oxygen_Dir, "sampleinfo.tsv"))
@@ -130,17 +135,17 @@ sampleinfo = vroom(paste0(oxygen_Dir, "sampleinfo.tsv"))
 
 ### (all) load sgRNAs library (Brunello)
 grna_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/original/broadgpp-brunello-library-contents_gRNAs.tsv")) %>%
-  rename("gene" = "Target Gene Symbol") %>%
+  rename(Target_Gene_Symbol = gene) %>%
   # update Non-Targeting sgRNAs name (remove trailing " Control" part)
-  mutate(gene = gsub(" Control$", "", gene)) %>%
+  mutate(Target_Gene_Symbol = gsub(" Control$","", Target_Gene_Symbol)) %>%
   # combine sgRNA and gene into an id
-  unite(col = "sgRNA_id", sgRNA, gene, sep = "__", remove = F) %>%
+  unite(col = "sgRNA_id", sgRNA, Target_Gene_Symbol, sep = "__", remove = F) %>%
   # keep interesting columns
-  select(sgRNA_id, sgRNA, gene, "sgRNA Target Sequence", "Target Context Sequence", "PAM Sequence", "Strand", "Genomic Sequence", "Position of Base After Cut (1-based)") %>%
+  select(sgRNA_id, sgRNA, Target_Gene_Symbol, "sgRNA Target Sequence", "Target Context Sequence", "PAM Sequence", "Strand", "Genomic Sequence", "Position of Base After Cut (1-based)") %>%
   # sort by chromosome and cut position
   arrange(`Genomic Sequence`, `Position of Base After Cut (1-based)`)
-  # add demeter2 score
-  #%>% merge(D2_score)
+# add demeter2 score
+#%>% merge(D2_score)
 
 
 
@@ -148,60 +153,61 @@ grna_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/orig
 
 ### working only with APOBEC3A data for the moment
 
-## option a): varianceStabilizingTransformation --> normalizes read counts across samples
-vst = raw_counts %>%
-  # combine sgRNA and gene into an id
-  unite(col = "sgRNA_id", sgRNA, gene, sep = "__") %>%
-  # sgRNA_id to row names
-  column_to_rownames("sgRNA_id") %>%
-  # vst requires a matrix object
-  as.matrix() %>%
-  # run vst
-  varianceStabilizingTransformation()
-
-## print normalized sample distributions
-
-# input format required for ggplot
-vst_plot_input =  vst %>%
-  as.data.frame() %>%
-  gather(key = sample,
-         value = `vst-normalized sgRNA counts`) %>%
-  # cell line / genotype variable
-  mutate(group = sub("_.*", "", sample),
-         group = sub("^[0-9]", "", group),
-         group = sub("^[0-9]", "", group))
-# set a fixed sample order
-vst_plot_input$sample = factor(vst_plot_input$sample,
-                               ordered = TRUE,
-                               levels = sampleinfo$sample)
-## boxplot using ggplot
-boxplot = ggplot(data = vst_plot_input,
-                 aes(x = sample,
-                     y = `vst-normalized sgRNA counts`,
-                     fill = factor(group))) +
-  geom_boxplot(lwd = 0.1,
-               outlier.size = 0.2,
-               outlier.stroke = 0.2) +
-  #ggtitle("[A3A, ATRi/TMZ, oxygen] experiment samples") +
-  xlab("") +
-  theme_minimal() +
-  theme(axis.title.y = element_text(size = 6),
-        axis.text.x = element_text(size = 3,
-                                   angle = 45,
-                                   hjust = 1,
-                                   vjust = 1.2),
-        axis.text.y = element_text(size = 6),
-        plot.title = element_text(hjust = 0.5,
-                                  size = 8),
-        legend.position="none")
-# save to file
-ggsave(paste0(figDir, "vst_normalized_grna_counts.jpg"),
-       plot = boxplot, device = "jpg", width = 10, height = 5.6, dpi = 300)
+# ## option a): varianceStabilizingTransformation --> normalizes read counts across samples
+# 
+# vst = raw_counts %>%
+#   # combine sgRNA and gene into an id
+#   unite(col = "sgRNA_id", sgRNA, gene, sep = "__") %>%
+#   # sgRNA_id to row names
+#   column_to_rownames("sgRNA_id") %>%
+#   # vst requires a matrix object
+#   as.matrix() %>%
+#   # run vst
+#   varianceStabilizingTransformation()
+# 
+# ## print normalized sample distributions
+# 
+# # input format required for ggplot
+# vst_plot_input =  vst %>%
+#   as.data.frame() %>%
+#   gather(key = sample,
+#          value = `vst-normalized sgRNA counts`) %>%
+#   # cell line / genotype variable
+#   mutate(group = sub("_.*", "", sample),
+#          group = sub("^[0-9]", "", group),
+#          group = sub("^[0-9]", "", group))
+# # set a fixed sample order
+# vst_plot_input$sample = factor(vst_plot_input$sample,
+#                                ordered = TRUE,
+#                                levels = sampleinfo$sample)
+# ## boxplot using ggplot
+# boxplot = ggplot(data = vst_plot_input,
+#                  aes(x = sample,
+#                      y = `vst-normalized sgRNA counts`,
+#                      fill = factor(group))) +
+#   geom_boxplot(lwd = 0.1,
+#                outlier.size = 0.2,
+#                outlier.stroke = 0.2) +
+#   #ggtitle("[A3A, ATRi/TMZ, oxygen] experiment samples") +
+#   xlab("") +
+#   theme_minimal() +
+#   theme(axis.title.y = element_text(size = 6),
+#         axis.text.x = element_text(size = 3,
+#                                    angle = 45,
+#                                    hjust = 1,
+#                                    vjust = 1.2),
+#         axis.text.y = element_text(size = 6),
+#         plot.title = element_text(hjust = 0.5,
+#                                   size = 8),
+#         legend.position="none")
+# # save to file
+# ggsave(paste0(figDir, "vst_normalized_grna_counts.jpg"),
+#        plot = boxplot, device = "jpg", width = 10, height = 5.6, dpi = 300)
 
 
 ## option b) (preferred here): as Brunello does contain control non-targeting sgRNAs, we can simply use the ln(sum(Non-Targeting sgRNA counts)) as an offset in the NB regression
 # store this offset in a table for later adding it to the data frames created in buildDF()
-raw_counts_offset = raw_counts %>%
+raw_counts_offset = raw_counts_t %>%
   # long format
   gather(key = "sample",
          value = "counts",
@@ -216,7 +222,7 @@ raw_counts_offset = raw_counts %>%
   distinct()
 
 # prepare raw counts table for conversion into eset
-raw_counts_for_eset = raw_counts %>%
+raw_counts_for_eset = raw_counts_t %>%
   # combine sgRNA and gene into an id
   unite(col = "sgRNA_id", sgRNA, gene, sep = "__") %>%
   # sgRNA_id to row names
@@ -242,7 +248,7 @@ eset = new("ExpressionSet", exprs = raw_counts_for_eset) # in case of wanting to
 sample_order = colnames(eset)
 
 # which is the order of sgRNA ids in eset
-grna_order = rownames(eset)
+grna_order = rownames(eset) # takes the first column
 
 
 ### add sample info to eset's 'phenoData' section
@@ -250,16 +256,16 @@ grna_order = rownames(eset)
 # make sure order of sampleinfo's rows is the same as in 'sample_order'
 # only samples that are BOTH in the counts AND sampleinfo tables are included (in theory, all of them)
 sampleinfo_sorted = left_join(data.frame(sample = sample_order),
-                              sampleinfo,
+                              sampleinfo_t,
                               by = "sample")
 
-pData(eset) = sampleinfo_sorted
+pData(eset) = sampleinfo_sorted #columns: sample, id, cell_line, TP53, HMCES, A3A_vector, treatment, time, replicate
 
 
 ## set the phenoData's conditions that are categorical variables as factors: either unordered (use 'dummy' contrasts by default), or unordered (treatment and time, set contrasts below)
 eset$cell_line = factor(eset$cell_line,
                         ordered = FALSE,
-                        levels = c("A549", "LXF289", "H358"))
+                        levels = c("A549", "LXF289", "H358"))     #for the first experiment
 eset$TP53 = factor(eset$TP53,
                    ordered = FALSE,
                    levels = c("wt", "mut", "KO"))
@@ -272,21 +278,17 @@ eset$A3A_vector = factor(eset$A3A_vector,
 eset$replicate = factor(eset$replicate,
                         ordered = FALSE,
                         levels = c(1, 2))
+
 # recategorize treatment variable (treatment_recat)
 pData(eset) %<>%
   mutate(treatment_recat = ifelse(treatment == "no",
                                   yes = "control",
-                                  no = ifelse(treatment == "DOX_IC25",
-                                              yes = "DOX_IC25",
-                                              no = ifelse(treatment %in% c("DOX_IC50", "DOX_ATRi"),
-                                                          yes = "DOX_IC50orATRi",
-                                                          no = "Warning: treatment other than no,DOX_IC25,DOX_IC50,DOX_ATRi"))),
+                                  no = "treated"),
          # set treatment_recat as ordered factor, and levels order
          treatment_recat = factor(treatment_recat,
                                   ordered = TRUE,
                                   levels = c("control",
-                                             "DOX_IC25",
-                                             "DOX_IC50orATRi")))
+                                             "treated")))
 # categorize time variable (time_cat)
 pData(eset) %<>%
   mutate(time_cat = ifelse(time == 0,
@@ -304,15 +306,17 @@ pData(eset) %<>%
                                       "time_15_17")))
 
 ## set BACKWARD difference contrast matrices to use with ordered factors in the regression
-# contrasts for treatment_recat
-contrast_matrix_three_levels_treatment_recat = matrix(c(-2/3, 1/3, 1/3,
-                                                        -1/3,-1/3, 2/3),
-                                                      ncol = 2,
-                                                      dimnames = list(c("control",
-                                                                        "DOX_IC25",
-                                                                        "DOX_IC50orATRi"),
-                                                                      c("DOX_IC25-vs-control", "DOX_IC50orATRi-vs-DOX_IC25")))
-contrasts(eset$treatment_recat) <- contrast_matrix_three_levels_treatment_recat
+
+# # contrasts for treatment_recat
+# contrast_matrix_three_levels_treatment_recat = matrix(c(-2/3, 1/3, 1/3,
+#                                                         -1/3,-1/3, 2/3),
+#                                                       ncol = 2,
+#                                                       dimnames = list(c("control",
+#                                                                         "DOX_IC25",
+#                                                                         "DOX_IC50orATRi"),
+#                                                                       c("DOX_IC25-vs-control", "DOX_IC50orATRi-vs-DOX_IC25")))
+# #assigning treatment contrast matrix to eset data (contrasts is inside pData(eset))
+# contrasts(eset$treatment_recat) <- contrast_matrix_three_levels_treatment_recat 
 
 # contrasts for time_cat
 contrast_matrix_three_levels_time_cat = matrix(c(-2/3, 1/3, 1/3,
@@ -334,7 +338,7 @@ conditions = names(pData(eset))[! names(pData(eset)) %in% c("sample", "id")]
 # make sure order of grna_library's rows is the same as in 'grna_order'
 # only sgRNAs that are BOTH in the counts AND library tables are included (in theory, all of them)
 grna_library_sorted = left_join(data.frame(sgRNA_id = grna_order),
-                                grna_library,
+                                grna_library_t,
                                 by = "sgRNA_id")
 
 fData(eset) = grna_library_sorted
@@ -346,9 +350,10 @@ sampleNames(eset) = eset$sample
 
 ## save processed data
 save(eset,
-     file = paste0(dataDir, "eset.RData"))
+     file = paste0(dataDir, "eset.RData_t"))
 # load it to save time
 #load(file = paste0(dataDir, "eset.RData")) ; conditions = names(pData(eset))[! names(pData(eset)) %in% c("sample", "id")]
+
 
 
 
@@ -363,7 +368,7 @@ gene_names = fData(eset) %>%
   select(gene) %>%
   filter(gene != "Non-Targeting") %>%
   distinct() %>%
-  pull(gene)
+  pull(gene) #pull similar to $
 
 NBres = mclapply(gene_names, function(g){
   
@@ -373,7 +378,7 @@ NBres = mclapply(gene_names, function(g){
   # run NB regression on that gene
   y = fitModel(g, eset, conditions, df)
   
-}, mc.cores = 30)
+}, mc.cores = 1)
 
 # name elements by their analyzed gene's name
 names(NBres) = gene_names
