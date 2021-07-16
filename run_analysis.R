@@ -112,7 +112,7 @@ sampleinfo = vroom(paste0(ATRi_TMZ_Dir, "sampleinfo.tsv"))
 # cell lines --> K562
 # treatment --> oxygen concentration 21%, 5%, 1%
 
-oxygen_Dir = paste0(rawPath, "4_resources/public_CRISPR_data/1_raw_data/K562_oxygen_jain/")
+oxygen_Dir = oxygen_Dir = "/g/strcombio/fsupek_cancer3/malvarez/public_CRISPR_data/1_raw_data/K562_oxygen_jain/"
 
 # load raw counts table
 raw_counts = vroom(paste0(oxygen_Dir, "raw_counts.tsv"))
@@ -459,7 +459,33 @@ hits = allres %>%
 
 ## plot hits
 
-for(gene in hits){
+for(gene in unique(hits$gene)){
+
+  # plot fitted grna counts across time, grouped by treated/control
+  p_fitted_counts = NBres[[gene]]$df %>%
+    # recategorize treatment in 2 levels
+    mutate(treatment_2_levels = ifelse(treatment == "no",
+                                       yes = "control",
+                                       no = "treated")) %>%
+    ggplot(aes(x = time_cat,
+               y = `fitted counts`,
+               color = treatment_2_levels)) +
+    geom_violin(width = 0.2,
+                position = position_dodge(width = 0.3)) +
+    geom_boxplot(width = 0.1,
+                 position = position_dodge(width = 0.3)) +
+    stat_summary(aes(group = treatment_2_levels),
+                 geom = "point",
+                 fun = "mean",
+                 position = position_dodge(width = 0.3)) +
+    stat_summary(aes(group = treatment_2_levels),
+                 geom = "line",
+                 fun = "mean",
+                 position = position_dodge(width = 0.3)) +
+    ggtitle(gene) +
+    theme_minimal()
+  ggsave(paste0(figDir, gene, "_raw_grna_counts.jpg"),
+         plot = p_fitted_counts, device = "jpg", width = 10, height = 5.6, dpi = 300)
   
   # plot sgRNA real (raw) counts per gene×treatment×time
   p_real_counts = ggplot(data = NBres[[gene]]$df,
@@ -497,38 +523,4 @@ heatmap.2(exprs(eset[fData(eset)$gene %in% hits, ]),
           trace="none", scale="row",
           ColSideColors=c("gray", "yellow", "red")[eset$treatment_recat])
 dev.off()
-
-gene = "A1BG"
-NBres[[gene]]$df %>%
-  mutate(treatment_2_levels = ifelse(treatment == "no",
-                                     yes = "control",
-                                     no = "treated")) %>%
-  ggplot(aes(x = time_cat,
-           y = `fitted counts`,
-           color = treatment_2_levels)) +
-  geom_violin(width = 0.2,
-              position = position_dodge(width = 0.3)) +
-  geom_boxplot(width = 0.1,
-               position = position_dodge(width = 0.3)) +
-  stat_summary(aes(group = treatment_2_levels),
-               geom = "point",
-               fun = "mean",
-               position = position_dodge(width = 0.3)) +
-  stat_summary(aes(group = treatment_2_levels),
-               geom = "line",
-               fun = "mean",
-               position = position_dodge(width = 0.3)) +
-  ggtitle(paste0("gene: ", gene)) +
-  theme_minimal()
-  
-
-
-
-data_glm = NBres[["A1BG"]]$df
-# plot number of counts vs time including the regression
-p_counts_vs_time = ggplot(data_glm[data_glm$treatment_recat == 'control', ],
-                          aes(x = time_cat,
-                              y = `real counts`)) + 
-  geom_boxplot()
-
 
