@@ -11,7 +11,7 @@ library(ggplot2)
 library(gplots)
 library(ggpubr)
 library(MASS)
-library(purr)
+library(purrr)
 library(broom)
 library(stringr)
 library(safejoin)
@@ -497,4 +497,38 @@ heatmap.2(exprs(eset[fData(eset)$gene %in% hits, ]),
           trace="none", scale="row",
           ColSideColors=c("gray", "yellow", "red")[eset$treatment_recat])
 dev.off()
+
+gene = "A1BG"
+NBres[[gene]]$df %>%
+  mutate(treatment_2_levels = ifelse(treatment == "no",
+                                     yes = "control",
+                                     no = "treated")) %>%
+  ggplot(aes(x = time_cat,
+           y = `fitted counts`,
+           color = treatment_2_levels)) +
+  geom_violin(width = 0.2,
+              position = position_dodge(width = 0.3)) +
+  geom_boxplot(width = 0.1,
+               position = position_dodge(width = 0.3)) +
+  stat_summary(aes(group = treatment_2_levels),
+               geom = "point",
+               fun = "mean",
+               position = position_dodge(width = 0.3)) +
+  stat_summary(aes(group = treatment_2_levels),
+               geom = "line",
+               fun = "mean",
+               position = position_dodge(width = 0.3)) +
+  ggtitle(paste0("gene: ", gene)) +
+  theme_minimal()
+  
+
+
+
+data_glm = NBres[["A1BG"]]$df
+# plot number of counts vs time including the regression
+p_counts_vs_time = ggplot(data_glm[data_glm$treatment_recat == 'control', ],
+                          aes(x = time_cat,
+                              y = `real counts`)) + 
+  geom_boxplot()
+
 
