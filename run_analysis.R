@@ -1,4 +1,3 @@
-
 #### load libraries
 library(vroom)
 library(magrittr)
@@ -6,6 +5,7 @@ library(dplyr)
 library(tidyr)
 library(tibble)
 library(stringr)
+library(Biobase)
 library(DESeq2)
 library(ggplot2)
 library(gplots)
@@ -16,7 +16,18 @@ library(broom)
 library(stringr)
 library(safejoin)
 library(data.table)
+library(effects)          # plot interaction terms
 library(readr)
+library(safejoin)
+library(devtools)
+library(sjmisc)           # for plot_model function
+library(sjPlot)           # for plot_model function
+library(ggiraphExtra)
+library(insight)
+library(moonBook)
+library(ggeffects)
+library(Biobase)
+
 
 # resolve function conflicts
 library(conflicted)
@@ -53,13 +64,13 @@ tmpDir = "/local_scratch/malvarez/chrysper/tmp/"
 ### a) testing dataset (few samples and genes)
 
 ## test raw counts table
-raw_counts = vroom("test/test_raw_counts.tsv")
+raw_counts_t = vroom("test/test_raw_counts.tsv")
 
 ## test sample info 
-sampleinfo = vroom("test/test_sampleinfo.tsv")
+sampleinfo_t = vroom("test/test_sampleinfo.tsv")
 
 ## test sgRNA library
-grna_library = vroom("test/test_grna_library.tsv")
+grna_library_t = vroom("test/test_grna_library.tsv")
 
 
 
@@ -70,7 +81,7 @@ rawPath = "/g/strcombio/fsupek_data/CRISPR/"
 
 
 ######################################################################################################
-## i) our APOBEC3A experiment
+## i) our APOBEC3A experiment (A3A)
 # cell lines --> A549, LXF289, H358
 # treatments --> DOX (A3A active) vs. control -- some also have ATRi
 # altered genotypes --> TP53-KO, TP53-mut, HMCES-KO
@@ -78,10 +89,10 @@ rawPath = "/g/strcombio/fsupek_data/CRISPR/"
 A3A_Dir = paste0(rawPath, "2_processed_data/apobec/MAGeCK_MLE_analyses/raw_counts_combined/")
 
 # load raw counts table
-raw_counts = vroom(paste0(A3A_Dir, "A549_LXF289_H358__raw_counts.tsv"))
-  
+raw_counts_A3A = vroom(paste0(A3A_Dir, "A549_LXF289_H358__raw_counts.tsv"))
+
 # load sample info 
-sampleinfo = vroom(paste0(A3A_Dir, "sampleinfo.tsv"))
+sampleinfo_A3A = vroom(paste0(A3A_Dir, "sampleinfo.tsv"))
 
 # more info
 # see /g/strcombio/fsupek_data/CRISPR/1_raw_data/0_INFO/paths_info_A549_LXF289_H358.xlsx
@@ -112,10 +123,11 @@ sampleinfo = vroom(paste0(ATRi_TMZ_Dir, "sampleinfo.tsv"))
 # cell lines --> K562
 # treatment --> oxygen concentration 21%, 5%, 1%
 
-oxygen_Dir = oxygen_Dir = "/g/strcombio/fsupek_cancer3/malvarez/public_CRISPR_data/1_raw_data/K562_oxygen_jain/"
+
+oxygen_Dir = "/g/strcombio/fsupek_cancer3/malvarez/public_CRISPR_data/1_raw_data/K562_oxygen_jain/"
 
 # load raw counts table
-raw_counts = vroom(paste0(oxygen_Dir, "raw_counts.tsv"))
+raw_counts = vroom(paste0(oxygen_Dir, "raw_counts.tsv")) # overwriting variables?
 
 # load sample info 
 sampleinfo = vroom(paste0(oxygen_Dir, "sampleinfo.tsv"))
@@ -130,17 +142,16 @@ sampleinfo = vroom(paste0(oxygen_Dir, "sampleinfo.tsv"))
 
 ### (all) load sgRNAs library (Brunello)
 grna_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/original/broadgpp-brunello-library-contents_gRNAs.tsv")) %>%
-  rename("gene" = "Target Gene Symbol") %>%
   # update Non-Targeting sgRNAs name (remove trailing " Control" part)
-  mutate(gene = gsub(" Control$", "", gene)) %>%
+  mutate(gene = gsub(" Control$","", gene)) %>%
   # combine sgRNA and gene into an id
   unite(col = "sgRNA_id", sgRNA, gene, sep = "__", remove = F) %>%
   # keep interesting columns
   select(sgRNA_id, sgRNA, gene, "sgRNA Target Sequence", "Target Context Sequence", "PAM Sequence", "Strand", "Genomic Sequence", "Position of Base After Cut (1-based)") %>%
   # sort by chromosome and cut position
   arrange(`Genomic Sequence`, `Position of Base After Cut (1-based)`)
-  # add demeter2 score
-  #%>% merge(D2_score)
+# add demeter2 score
+#%>% merge(D2_score)
 
 
 
@@ -148,60 +159,9 @@ grna_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/orig
 
 ### working only with APOBEC3A data for the moment
 
-## option a): varianceStabilizingTransformation --> normalizes read counts across samples
-vst = raw_counts %>%
-  # combine sgRNA and gene into an id
-  unite(col = "sgRNA_id", sgRNA, gene, sep = "__") %>%
-  # sgRNA_id to row names
-  column_to_rownames("sgRNA_id") %>%
-  # vst requires a matrix object
-  as.matrix() %>%
-  # run vst
-  varianceStabilizingTransformation()
-
-## print normalized sample distributions
-
-# input format required for ggplot
-vst_plot_input =  vst %>%
-  as.data.frame() %>%
-  gather(key = sample,
-         value = `vst-normalized sgRNA counts`) %>%
-  # cell line / genotype variable
-  mutate(group = sub("_.*", "", sample),
-         group = sub("^[0-9]", "", group),
-         group = sub("^[0-9]", "", group))
-# set a fixed sample order
-vst_plot_input$sample = factor(vst_plot_input$sample,
-                               ordered = TRUE,
-                               levels = sampleinfo$sample)
-## boxplot using ggplot
-boxplot = ggplot(data = vst_plot_input,
-                 aes(x = sample,
-                     y = `vst-normalized sgRNA counts`,
-                     fill = factor(group))) +
-  geom_boxplot(lwd = 0.1,
-               outlier.size = 0.2,
-               outlier.stroke = 0.2) +
-  #ggtitle("[A3A, ATRi/TMZ, oxygen] experiment samples") +
-  xlab("") +
-  theme_minimal() +
-  theme(axis.title.y = element_text(size = 6),
-        axis.text.x = element_text(size = 3,
-                                   angle = 45,
-                                   hjust = 1,
-                                   vjust = 1.2),
-        axis.text.y = element_text(size = 6),
-        plot.title = element_text(hjust = 0.5,
-                                  size = 8),
-        legend.position="none")
-# save to file
-ggsave(paste0(figDir, "vst_normalized_grna_counts.jpg"),
-       plot = boxplot, device = "jpg", width = 10, height = 5.6, dpi = 300)
-
-
-## option b) (preferred here): as Brunello does contain control non-targeting sgRNAs, we can simply use the ln(sum(Non-Targeting sgRNA counts)) as an offset in the NB regression
+## as Brunello does contain control non-targeting sgRNAs, we can simply use the ln(sum(Non-Targeting sgRNA counts)) as an offset in the NB regression
 # store this offset in a table for later adding it to the data frames created in buildDF()
-raw_counts_offset = raw_counts %>%
+raw_counts_offset = raw_counts_A3A %>%
   # long format
   gather(key = "sample",
          value = "counts",
@@ -216,7 +176,7 @@ raw_counts_offset = raw_counts %>%
   distinct()
 
 # prepare raw counts table for conversion into eset
-raw_counts_for_eset = raw_counts %>%
+raw_counts_for_eset = raw_counts_A3A %>%
   # combine sgRNA and gene into an id
   unite(col = "sgRNA_id", sgRNA, gene, sep = "__") %>%
   # sgRNA_id to row names
@@ -229,7 +189,7 @@ raw_counts_for_eset = raw_counts %>%
 # 1- MAGeCK median-normalization --> yields table of normalized counts
 # 2- If the library contains control sgRNAs (non-targeting (like in Brunello), or safe-targeting)
 #    i) MAGeCK median-normalization using only this control set as reference
-# 3- rlog() (another 'DESeq2' function)
+# 3- rlog() or varianceStabilizingTransformation() ('DESeq2' functions)
 
 
 
@@ -242,7 +202,7 @@ eset = new("ExpressionSet", exprs = raw_counts_for_eset) # in case of wanting to
 sample_order = colnames(eset)
 
 # which is the order of sgRNA ids in eset
-grna_order = rownames(eset)
+grna_order = rownames(eset) # takes the first column
 
 
 ### add sample info to eset's 'phenoData' section
@@ -250,16 +210,16 @@ grna_order = rownames(eset)
 # make sure order of sampleinfo's rows is the same as in 'sample_order'
 # only samples that are BOTH in the counts AND sampleinfo tables are included (in theory, all of them)
 sampleinfo_sorted = left_join(data.frame(sample = sample_order),
-                              sampleinfo,
+                              sampleinfo_A3A,
                               by = "sample")
 
-pData(eset) = sampleinfo_sorted
+pData(eset) = sampleinfo_sorted # columns: sample, id, cell_line, TP53, HMCES, A3A_vector, treatment, time, replicate
 
 
 ## set the phenoData's conditions that are categorical variables as factors: either unordered (use 'dummy' contrasts by default), or unordered (treatment and time, set contrasts below)
 eset$cell_line = factor(eset$cell_line,
                         ordered = FALSE,
-                        levels = c("A549", "LXF289", "H358"))
+                        levels = c("A549", "LXF289", "H358"))     #for the first experiment
 eset$TP53 = factor(eset$TP53,
                    ordered = FALSE,
                    levels = c("wt", "mut", "KO"))
@@ -272,22 +232,33 @@ eset$A3A_vector = factor(eset$A3A_vector,
 eset$replicate = factor(eset$replicate,
                         ordered = FALSE,
                         levels = c(1, 2))
-# recategorize treatment variable (treatment_recat)
+
+## recategorize treatment variable into ordered factor (treatment_recat)
+# a) TEST A3A dataset
 pData(eset) %<>%
   mutate(treatment_recat = ifelse(treatment == "no",
                                   yes = "control",
-                                  no = ifelse(treatment == "DOX_IC25",
-                                              yes = "DOX_IC25",
-                                              no = ifelse(treatment %in% c("DOX_IC50", "DOX_ATRi"),
-                                                          yes = "DOX_IC50orATRi",
-                                                          no = "Warning: treatment other than no,DOX_IC25,DOX_IC50,DOX_ATRi"))),
+                                  no = "treated"),
          # set treatment_recat as ordered factor, and levels order
          treatment_recat = factor(treatment_recat,
                                   ordered = TRUE,
                                   levels = c("control",
-                                             "DOX_IC25",
-                                             "DOX_IC50orATRi")))
-# categorize time variable (time_cat)
+                                             "treated")))
+# b) FULL A3A DATASET --> treated only if A3A + DOX 
+pData(eset) %<>%
+  mutate(treatment_recat = ifelse((A3A_vector == 'no' & treatment == 'no') |
+                                    (A3A_vector == 'yes' & treatment == 'no') |
+                                    (A3A_vector == 'no' & treatment == 'DOX_IC25') |
+                                    (A3A_vector == 'no' & treatment == 'DOX_ATRi'),
+                                  yes = "control",
+                                  no = "treated"),
+         # set treatment_recat as ordered factor, and levels order
+         treatment_recat = factor(treatment_recat,
+                                  ordered = TRUE,
+                                  levels = c("control",
+                                             "treated")))
+
+# categorize time variable into ordered factor (time_cat)
 pData(eset) %<>%
   mutate(time_cat = ifelse(time == 0,
                            yes = "time_0",
@@ -303,16 +274,7 @@ pData(eset) %<>%
                                       "time_3_5_6_9_10_12_13",
                                       "time_15_17")))
 
-## set BACKWARD difference contrast matrices to use with ordered factors in the regression
-# contrasts for treatment_recat
-contrast_matrix_three_levels_treatment_recat = matrix(c(-2/3, 1/3, 1/3,
-                                                        -1/3,-1/3, 2/3),
-                                                      ncol = 2,
-                                                      dimnames = list(c("control",
-                                                                        "DOX_IC25",
-                                                                        "DOX_IC50orATRi"),
-                                                                      c("DOX_IC25-vs-control", "DOX_IC50orATRi-vs-DOX_IC25")))
-contrasts(eset$treatment_recat) <- contrast_matrix_three_levels_treatment_recat
+## set BACKWARD difference contrast matrices to use with time_cat in the regression
 
 # contrasts for time_cat
 contrast_matrix_three_levels_time_cat = matrix(c(-2/3, 1/3, 1/3,
@@ -323,6 +285,7 @@ contrast_matrix_three_levels_time_cat = matrix(c(-2/3, 1/3, 1/3,
                                                                  "time_15_17"),
                                                                c("middle-vs-zero", "late-vs-middle")))
 contrasts(eset$time_cat) <- contrast_matrix_three_levels_time_cat
+
 
 ## list of conditions (column names in 'sampleinfo'):
 # "cell_line","TP53","HMCES","A3A_vector","treatment","time","replicate","treatment_recat","time_cat"
@@ -355,10 +318,13 @@ save(eset,
 
 #### NB regression
 
+# IMPORTANT: depending on the analysis, change formula in src/functions.R
+
 ### load NB regression custom functions
 source("src/functions.R")
 
-### run NB regression (loop across genes) --> for full A3A dataset, it takes ~30 min. in fsupeksvr
+### run NB regression (loop across genes) --> for full A3A dataset, it takes 8? hours in fsupeksvr
+
 gene_names = fData(eset) %>%
   select(gene) %>%
   filter(gene != "Non-Targeting") %>%
@@ -369,6 +335,16 @@ NBres = mclapply(gene_names, function(g){
   
   # build dataframe (for a given gene) for regression
   df = buildDF(g, eset, conditions, raw_counts_offset)
+  
+  ## this whole step should probably be moved to the eset preparation step
+  df = df %>%
+    # add time_0 counts to treated samples (i.e. t0 is shared for both control and treated samples) 
+    filter(time_cat == 'time_0') %>%
+    mutate(treatment_recat = replace(treatment_recat, treatment_recat == 'control','treated')) %>%
+    rbind(df)
+  # redefine contrast for time_cat to add the new time_0 treated rows
+  contrasts(df$time_cat) <- contrast_matrix_three_levels_time_cat
+  ##
   
   # run NB regression on that gene
   y = fitModel(g, eset, conditions, df)
@@ -384,18 +360,15 @@ save(NBres, file = paste0(dataDir, "NBres.RData"))
 
 
 
-
 #### parse NB results
 
 ## merge all genes results (i.e. the elements from NBres list) into megatable 'allres'
 
 # apply broom::tidy() to each gene from NBres
 NBres_tidy = NBres %>%
-  map(., ~tidy(.x$model)) %>%
-  # remove sgRNA rows
-  map(., ~filter(.x, ! str_detect(term, "sgRNAs")))
+  map(., ~tidy(.x$model))
 
-# now merge NB results for all genes
+# now merge NB results for all genes into a megatable (takes time)
 allres = eat(NBres_tidy[[1]],
              NBres_tidy[-1],
              .by = "term") %>%
@@ -423,7 +396,7 @@ allres = eat(NBres_tidy[[1]],
            sep = "\\_") %>%
   # one column estimate, one column SE, another statistic, another p.value
   pivot_wider(names_from = c(estimate.SE.stat.pval),
-                     values_from = c(value)) %>%
+              values_from = c(value)) %>%
   # remove NA rows
   na.omit() %>%
   # remove intercepts
@@ -432,15 +405,15 @@ allres = eat(NBres_tidy[[1]],
   mutate(condition = ifelse(str_detect(term, "\\:"),
                             yes = "interaction",
                             no = gsub("_.*",
-                                       "",
-                                       term))) %>%
+                                      "",
+                                      term))) %>%
   # correct p-values (FDR)
   mutate(fdr = p.adjust(p.value,
                         method = "BH")) %>%
   # order and sort
   select(gene, condition, term, estimate, std.error, statistic, p.value, fdr) %>%
   arrange(fdr, p.value)
-  
+
 ## write table to file
 write_tsv(allres,
           paste0(tabDir, "results.tsv"))
@@ -449,78 +422,43 @@ write_tsv(allres,
 
 #### detect top gene hits
 
-hits = allres %>%
-  # some filters for significance, e.g. |estimate|>4 & FDRs<0.05
-  filter(abs(estimate) > 0.001 &
-           fdr < 0.95) %>%
-  # sorted by e.g. descending |estimate|
-  arrange(desc(abs(estimate)))
+# to detect genes with just negative slope for treated samples
+hits = data.frame(matrix(nrow=0,
+                         ncol=length(colnames(allres))))
+names(hits) = colnames(allres)
+hits = as_tibble(hits)
+for (g in unique(allres$gene)){
+  treatment_L = allres %>% filter(gene == g & term == 'treatment_recat.L')
+  time_mid_0 = allres %>% filter(gene == g & term == 'time_catmiddle-vs-zero')
+  time_late_mid = allres %>% filter(gene == g & term == 'time_catlate-vs-middle')
+  interaction_mid_0 = allres %>% filter(gene == g & term == 'time_catmiddle-vs-zero:treatment_recat.L')
+  interaction_late_mid = allres %>% filter(gene == g & term == 'time_catlate-vs-middle:treatment_recat.L')
+  ifelse(interaction_mid_0$fdr < 0.05 ||
+           interaction_late_mid$fdr < 0.05,
+         yes = (hits = rbind(hits, interaction_mid_0,
+                             interaction_late_mid,
+                             treatment_L,
+                             time_late_mid,
+                             time_mid_0)),
+         no = (hits = hits))
+}
 
 
 ## plot hits
 
 for(gene in unique(hits$gene)){
-
-  # plot fitted grna counts across time, grouped by treated/control
-  p_fitted_counts = NBres[[gene]]$df %>%
-    # recategorize treatment in 2 levels
-    mutate(treatment_2_levels = ifelse(treatment == "no",
-                                       yes = "control",
-                                       no = "treated")) %>%
-    ggplot(aes(x = time_cat,
-               y = `fitted counts`,
-               color = treatment_2_levels)) +
-    geom_violin(width = 0.2,
-                position = position_dodge(width = 0.3)) +
-    geom_boxplot(width = 0.1,
-                 position = position_dodge(width = 0.3)) +
-    stat_summary(aes(group = treatment_2_levels),
-                 geom = "point",
-                 fun = "mean",
-                 position = position_dodge(width = 0.3)) +
-    stat_summary(aes(group = treatment_2_levels),
-                 geom = "line",
-                 fun = "mean",
-                 position = position_dodge(width = 0.3)) +
+  data_df = NBres[[gene]]$df
+  data_model = NBres[[gene]]$model
+  new_model_names = c('counts', 'time_cat', 'treatment_recat', 'ln_sum_nontargeting')
+  names(data_model$model) = new_model_names
+  p_model = plot_model(data_model, 
+                       type = "pred", 
+                       terms = c('time_cat', 'treatment_recat'),
+                       value.offset = 'ln_sum_nontargeting') +
+    geom_line() +
     ggtitle(gene) +
     theme_minimal()
-  ggsave(paste0(figDir, gene, "_raw_grna_counts.jpg"),
-         plot = p_fitted_counts, device = "jpg", width = 10, height = 5.6, dpi = 300)
-  
-  # plot sgRNA real (raw) counts per gene×treatment×time
-  p_real_counts = ggplot(data = NBres[[gene]]$df,
-                         aes(x = treatment_recat,
-                             y = `real counts`,
-                             colour = sgRNA)) +
-                    geom_boxplot() +
-                    facet_grid(facets = ~time_cat) +
-                    theme_bw() +
-                    ggtitle(gene)
-  ggsave(paste0(figDir, gene, "_raw_grna_counts.jpg"),
-         plot = p_real_counts, device = "jpg", width = 10, height = 5.6, dpi = 300)
-
-  # plot real (raw) vs. fitted counts per gene×experiment_id, we want them to be similar (stratify by experiment group "id")
-  p_real_vs_fitted_counts = ggplot(data = NBres[[gene]]$df,
-                                   aes(x = `real counts`,
-                                       y = `fitted counts`,
-                                       group = id)) +
-                              geom_point() +
-                              geom_smooth(method = lm) + 
-                              stat_cor(method = "pearson",
-                                       alternative = "two.sided",
-                                       cor.coef.name = "R") + 
-                              facet_grid(facets = ~id) + 
-                              ylab("NB fitted counts") + 
-                              theme_minimal() +
-                              ggtitle(gene)
-  ggsave(paste0(figDir, gene, "_raw_vs_fitted_grna_counts.jpg"),
-         plot = p_real_vs_fitted_counts, device = "jpg", width = 10, height = 5.6, dpi = 300)
+  show(p_model)
+  ggsave(path = figDir, filename = paste0(gene, "_counts_vs_time.jpg"),
+          plot = p_model, device = "jpg", width = 10, height = 5.6, dpi = 300)  
 }
-
-# heatmap sample×sgRNAs
-pdf(paste0(figDir, "top_hits_heatmap.pdf"), width=10, height=5.6)
-heatmap.2(exprs(eset[fData(eset)$gene %in% hits, ]),
-          trace="none", scale="row",
-          ColSideColors=c("gray", "yellow", "red")[eset$treatment_recat])
-dev.off()
-

@@ -4,7 +4,7 @@ buildDF = function(g, eset, conditions, offset){
   
   # extract gene from eset
   x = eset[fData(eset)$gene == g, ]
-  
+
   # initialize data frame (counts, sgRNA, gene, sample)
   df = data.frame(counts = as.vector(exprs(x)),
                   sgRNA = rep(rownames(x), ncol(x)),
@@ -14,7 +14,7 @@ buildDF = function(g, eset, conditions, offset){
                                rep(nrow(x),
                                    ncol(x))),
                   stringsAsFactors = F) %>%
-    ## append sample-related offset to df (THIS SHOULD BE COMMENTED IF NO OFFSET IS USED, I.E. USING VST NORMALIZED COUNTS)
+    ## append sample-related offset to df
     merge(offset, by = "sample")
     
   # append conditions to the data frame
@@ -39,17 +39,12 @@ buildDF = function(g, eset, conditions, offset){
 fitModel = function(g, eset, conditions, df){
   
   ### regression: generalized linear model, family negative binomial
-  # when using vst normalized counts, there are warnings complaining about the use of *non-integers* as counts (because these are *normalized* counts, so they are floats)
-  # here, we use the raw counts (no vst normalization) and include an offset in the formula
-  
-  # formula (if we are using the full A3A dataset, there are extra variables that in the test dataset are constant)
-  test_dataset_formula = "counts ~ treatment_recat*time_cat + sgRNA + offset(ln_sum_nontargeting)"
-  full_A3A_dataset_formula = "counts ~ treatment_recat*time_cat + A3A_vector + HMCES + cell_line + TP53 + replicate + sgRNA + offset(ln_sum_nontargeting)"
-  
+
+  formula = "counts ~ treatment_recat*time_cat + offset(ln_sum_nontargeting)"
+
   # run NB regression
-  y = glm.nb(data = df,
-             formula = test_dataset_formula)
-  
+  y = glm.nb(formula = formula,
+             data = df)
   
   ### return list of:
   # - model (y)

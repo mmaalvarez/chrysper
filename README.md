@@ -5,19 +5,46 @@ Generalized Linear Model (family Negative Binomial)
 Regression: 
 `geneKO read counts ~ treatment*time + control variables + offset + ε`
 
-A treatment that kills the tumor gradually is better for the patient than a treatment that kills the tumor too fast.
 
-In this line, we want to detect with which gene knockouts there is a strong interaction between a (drug) treatment and its duration -- and if so, check the changes in cell death rate (or positive selection) along time (steady or sudden changes), whether there is monotonicity or not, etc.
+MAIN INTEREST
+-------------
+
+Detect non-linear time trends for the effect that inactivating a single gene has on cell fitness (i.e. increase or decrease of cell -sgRNA- counts)
+
+	a) For controls and treated samples separately, find geneKOs with significant non-linearity for `counts ~ time + offset` (>2 time categories with orthogonal polynomial contrasts)
+
+		- E.g. time.Q (quadratic) or time.C (cubic) significant
+
+	b) For all samples together, and the previous gene hits, check `counts ~ treatment * time + offset` with backward contrasts to see whether the non-linearity above depends on presence/absence of treatment, at least at 1 time point (i.e. gene×time×treatment epistasis)
+
+		- E.g. time_mid-vs-0:treatment.L and/or time_late-vs-mid:treatment.L significant
 
 
-# Cat
-Tenim unes dades de CRISPR/Cas9 screening, que es resumeixen en uns "counts" dels quals l'abundància es correspon amb quant "dolent" or "beneficiós" és perdre un determinat gen per les cèl.lules (tumorals) d'un cultiu. És a dir, si inactivar un determinat gen a una d'aquestes cèl.lules és dolent per ella i la seva descendència (perquè per exemple pot ser un gen important per a la seva supervivència), doncs aquesta cèl.lula morirà o tindrà poca descendència, i llavors als resultats de l'anàlisi veurem pocs "counts" procedents d'aquesta cèl.lula (perquè n'hi haurà poques descendents al cultiu) comparat amb els counts de la resta de cèl.lules que tenen altres gens inactivats.
+GO set enrichment of gene hits can provide more insight
 
-A més, tenim dades de cultius els quals s'han tractat amb un fàrmac antitumoral, i d'altres sense tractament (control).
 
-Finalment, tenim mostres de cada cultiu a temps successius, així podem veure com les proporcions de counts van canviant al llarg del temps (potser la perdua d'un gen triga en ser dolenta, aleshores només quan han passat força dies podem detectar un descens en la quantitat de counts que representen les cèl.lules en les quals s'ha inactivat aquest gen).
 
-Les variables de la NB regression poden ser categòriques, com la presència o no d'un fàrmac al cultiu, el tipus cel.lular si n'hi hagués més d'u... i time és el dia de mostreig (dia1, dia5, dia10...). Els asteriscs indiquen que volem testar les interaccions entre les variables.
-Actualment aquesta regressió segueix un "Generalized Linear Model", de tipus "Negative Binomial" (com Poisson, perquè son counts, però amb més variància), que en R es pot indicar amb la funció 'glm.nb'. Crec que també s'estava provant amb lmer, que permeteix introduir mixed effects.
+Tumor treatment improvement
+---------------------------
 
-Així, la cosa seria que amb aquesta anàlisi es podria veure si, per exemple, hi ha una interacció entre un tractament antitumoral i la durada del tractament. Si és així, veuriem que la disminució de cèl.lules tumorals quan hi ha presència del tractament (menys counts totals, comparat amb el control) depèn de la durada del mateix. També podriem veure com de ràpid actua i altres aspectes.
+Find genes whose KO makes the treated samples counts to decrease more gradually, so the treatment may not be too aggressive for the patient
+
+	- ideally, for the controls the line should be flat (βs = 0), so the loss of these genes per se does NOT affect fitness
+
+	- approaches to do so:
+
+		i) in an absolute manner, i.e. defining β and FDR thresholds
+
+		ii) relative to the "default" shape, i.e. more "straight" and gradual than the default effect of drug without gene function loss
+
+			- 1st check how tumor cell count decreases just due to treatment (e.g. A3A presence), without the influence of the loss of a gene (expectedly sudden/fast). This could be proxied by the shape of *treated* sample counts across time when using
+
+				a) 350 non-essential genes only
+
+				b) all genes together?
+
+	- validations that a hit is real:
+
+		i) it replicates across cell lines (not NECESSARY though, it could really have this effect only in one cell line, due to genetic background, but if it's replicated across cell lines, it is proof enough that it is a real hit)
+
+		ii) there are pathways/GO terms enriched for these hits -- ideally, the mechanism should make sense (e.g. related to A3A - deamination - BER - DSBs..., or others)
