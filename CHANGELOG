@@ -1,3 +1,8 @@
+- adding Oriol's changes
+- push original run_analysis.R and src/functions.R
+- sync run_analysis.R
+- new R file (no interaction)
+- update TODO and README
 - update TODO and paths
 - megatable and detect hits
 - edit TODO

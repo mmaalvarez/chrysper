@@ -3,48 +3,23 @@
 Generalized Linear Model (family Negative Binomial)
 
 Regression: 
-`geneKO read counts ~ treatment*time + control variables + offset + ε`
+`geneKO read counts ~ time_cat + control variables + offset + ε`
 
 
 MAIN INTEREST
 -------------
 
-Detect non-linear time trends for the effect that inactivating a single gene has on cell fitness (i.e. increase or decrease of cell -sgRNA- counts)
+Detect non-linear time trends for gene essentiality: this differs from classic gene essentiality analyses in that it could identify genes whose effect on fitness is non-monotonic (/\ or \/)
 
-	a) For controls and treated samples separately, find geneKOs with significant non-linearity for `counts ~ time + offset` (>2 time categories with orthogonal polynomial contrasts)
+This uses untreated samples from each cell line (7) separately, and finds gene-KOs with significant non-linearity for `counts ~ time + offset`. Currently 'time' is categorized into t0, t-mid, and t-late, with the default orthogonal polynomial contrasts
 
-		- E.g. time.Q (quadratic) or time.C (cubic) significant
+	FILTER1: FDR<0.05 in time_cat.Q (quadratic)
 
-	b) For all samples together, and the previous gene hits, check `counts ~ treatment * time + offset` with backward contrasts to see whether the non-linearity above depends on presence/absence of treatment, at least at 1 time point (i.e. gene×time×treatment epistasis)
+	FILTER2: hit overlap across control cell lines
 
-		- E.g. time_mid-vs-0:treatment.L and/or time_late-vs-mid:treatment.L significant
+	FILTER3: draw hit curves (plot_model) to check that they match across cell lines
 
-
-GO set enrichment of gene hits can provide more insight
-
+GO set enrichment of gene hits can provide more insights
 
 
-Tumor treatment improvement
----------------------------
-
-Find genes whose KO makes the treated samples counts to decrease more gradually, so the treatment may not be too aggressive for the patient
-
-	- ideally, for the controls the line should be flat (βs = 0), so the loss of these genes per se does NOT affect fitness
-
-	- approaches to do so:
-
-		i) in an absolute manner, i.e. defining β and FDR thresholds
-
-		ii) relative to the "default" shape, i.e. more "straight" and gradual than the default effect of drug without gene function loss
-
-			- 1st check how tumor cell count decreases just due to treatment (e.g. A3A presence), without the influence of the loss of a gene (expectedly sudden/fast). This could be proxied by the shape of *treated* sample counts across time when using
-
-				a) 350 non-essential genes only
-
-				b) all genes together?
-
-	- validations that a hit is real:
-
-		i) it replicates across cell lines (not NECESSARY though, it could really have this effect only in one cell line, due to genetic background, but if it's replicated across cell lines, it is proof enough that it is a real hit)
-
-		ii) there are pathways/GO terms enriched for these hits -- ideally, the mechanism should make sense (e.g. related to A3A - deamination - BER - DSBs..., or others)
+"Gene essentiality": The effect that inactivating a single gene has on cell fitness. It can be inferred by the increase or decrease of cell counts after some days of selection, relative to the cell culture pool. Cell counts are proxied by sgRNA counts, which have to be normalized across samples.

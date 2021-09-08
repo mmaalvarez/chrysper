@@ -1,0 +1,33 @@
+datasets
+--------
+
+	combine the 3 datasets
+
+	keep only controls
+
+
+'eset' code block
+------------------
+
+	backward contrasts not applied to time_cat, so it has OPC
+
+
+NB loop
+-------
+
+	analyses per cell line (7) and per gene
+
+	formula: 
+			counts ~ time_cat + offset(non-essentials) --> this goes for controls, with OPC in time_cat
+
+
+gene hit ascertainment
+----------------------
+
+	FILTER1: FDR<0.05 in time_cat.Q
+
+	FILTER2: hit overlap across 7 control cell lines
+
+	FILTER3: draw hit curves (plot_model) to check that they match across cell lines
+
+	FILTER4: GO set enrichment of gene hits can provide more insights
