@@ -1,24 +1,4 @@
-datasets
---------
-
-	combine the 3 datasets
-
-	keep only controls
-
-
-'eset' code block
-------------------
-
-	backward contrasts not applied to time_cat, so it has OPC
-
-
-NB loop
--------
-
-	analyses per cell line (7) and per gene
-
-	formula: 
-			counts ~ time_cat + offset(non-essentials) --> this goes for controls, with OPC in time_cat
+run analysis for olaparib and moffat p53wt RPE1 isogenic pair? (multiple time points, TKOv1)
 
 
 gene hit ascertainment
