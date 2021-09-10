@@ -1,3 +1,5 @@
+- big changes for non-linear gene essentiality across cell lines
+- README, TODO
 - adding Oriol's changes
 - push original run_analysis.R and src/functions.R
 - sync run_analysis.R

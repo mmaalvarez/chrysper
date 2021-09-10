@@ -56,13 +56,18 @@ tmpDir = "/local_scratch/malvarez/chrysper/tmp/"
 
 
 
-####### load datasets (tables of raw read counts and sample info), several options:
+################################################################################################
+
+### 1) Brunello datasets
+
+
+### load datasets (tables of raw read counts and sample info), several options:
 
 # raw data's root path
 rawPath = "/g/strcombio/fsupek_data/CRISPR/"
 
 ### load sgRNAs library (Brunello), common for the 3 datasets
-grna_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/original/broadgpp-brunello-library-contents_gRNAs.tsv")) %>%
+brunello_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/original/broadgpp-brunello-library-contents_gRNAs.tsv")) %>%
   # update Non-Targeting sgRNAs name (remove trailing " Control" part)
   mutate(gene = gsub(" Control$","", gene)) %>%
   # combine sgRNA and gene into an id
@@ -74,7 +79,7 @@ grna_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/orig
 
 ### raw data from 3 different experiments:
 
-######################################################################################################
+############################################################
 ## i) our APOBEC3A experiment (A3A)
 # cell lines --> A549, LXF289, H358
 # treatments --> DOX (A3A active) vs. control -- some also have ATRi
@@ -91,10 +96,9 @@ raw_counts_A3A = vroom(paste0(A3A_Dir, "A549_LXF289_H358__raw_counts.tsv"))
 sampleinfo_A3A = vroom(paste0(A3A_Dir, "sampleinfo.tsv"))
 
 # more info --> /g/strcombio/fsupek_data/CRISPR/1_raw_data/0_INFO/paths_info_A549_LXF289_H358.xlsx
-######################################################################################################
 
 
-######################################################################################################
+####################################################
 ## ii) Travis lab's ATRi/TMZ experiment
 # cell lines --> SW480, SW620, HT29
 # treatments --> ATRi, TMZ vs. control
@@ -109,10 +113,9 @@ raw_counts_ATRi_TMZ = vroom(paste0(ATRi_TMZ_Dir, "SW480_SW620_HT29__ARID1A_MSH6_
 sampleinfo_ATRi_TMZ = vroom(paste0(ATRi_TMZ_Dir, "sampleinfo.tsv"))
 
 # more info --> readLines("/g/strcombio/fsupek_data/CRISPR/1_raw_data/0_INFO/other_labs/paths_info_stracker.txt")
-######################################################################################################
 
 
-######################################################################################################
+###############################################
 ## iii) Jain et al oxygen experiment
 # cell lines --> K562
 # treatment --> oxygen concentration 21%, 5%, 1%
@@ -135,7 +138,7 @@ raw_counts_oxygen = vroom(paste0(oxygen_Dir, "raw_counts.tsv")) %>%
   select(-gene_name_other_datasets) %>%
   # convert sgRNA sequences into sgRNA ids
   rename("sgRNA Target Sequence" = "sgRNA") %>%
-  merge(select(grna_library, sgRNA, `sgRNA Target Sequence`),
+  merge(select(brunello_library, sgRNA, `sgRNA Target Sequence`),
         by = "sgRNA Target Sequence") %>%
   select(-`sgRNA Target Sequence`) %>%
   relocate(sgRNA, .before = "gene")
@@ -144,14 +147,13 @@ raw_counts_oxygen = vroom(paste0(oxygen_Dir, "raw_counts.tsv")) %>%
 sampleinfo_oxygen = vroom(paste0(oxygen_Dir, "sampleinfo.tsv"))
 
 # more info --> readLines(paste0(oxygen_Dir, "README"))
-######################################################################################################
 
 
-### combine datasets
-raw_counts_3_datasets = merge(raw_counts_A3A, raw_counts_ATRi_TMZ) %>%
+#### combine datasets
+raw_counts_3_brunello_datasets = merge(raw_counts_A3A, raw_counts_ATRi_TMZ) %>%
   merge(raw_counts_oxygen)
 
-sampleinfo_3_datasets = merge(sampleinfo_A3A, sampleinfo_ATRi_TMZ, all = T) %>%
+sampleinfo_3_brunello_datasets = merge(sampleinfo_A3A, sampleinfo_ATRi_TMZ, all = T) %>%
   merge(sampleinfo_oxygen, all = T) %>%
   # control or treated
   mutate(type = ifelse(! is.na(A3A_vector), 
@@ -181,7 +183,7 @@ sampleinfo_3_datasets = merge(sampleinfo_A3A, sampleinfo_ATRi_TMZ, all = T) %>%
   select(sample, cell_line, time, type, replicate) %>%
   arrange(cell_line, time, type, replicate)
 
-sampleinfo_3_datasets %>%
+sampleinfo_3_brunello_datasets %>%
   filter(type == "control") %>%
   select(cell_line, time) %>%
   table()
@@ -204,7 +206,7 @@ sampleinfo_3_datasets %>%
 
 ## as Brunello contains control non-targeting sgRNAs, we can simply use the ln(sum(Non-Targeting sgRNA counts)) as an offset in the NB regression
 # store this offset in a table for later adding it to the data frames created in buildDF()
-raw_counts_offset = raw_counts_3_datasets %>%
+raw_counts_offset_brunello = raw_counts_3_brunello_datasets %>%
   # long format
   gather(key = "sample",
          value = "counts",
@@ -220,7 +222,7 @@ raw_counts_offset = raw_counts_3_datasets %>%
 
 
 # prepare raw counts table for conversion into eset
-raw_counts_for_eset = raw_counts_3_datasets %>%
+raw_counts_for_eset_brunello = raw_counts_3_brunello_datasets %>%
   # combine sgRNA and gene into an id
   unite(col = "sgRNA_id", sgRNA, gene, sep = "__") %>%
   # sgRNA_id to row names
@@ -231,13 +233,13 @@ raw_counts_for_eset = raw_counts_3_datasets %>%
 
 #### store data as Biobase's 'ExpressionSets' (esets): a Class to Contain and Describe High-Throughput Expression Level Assays
 
-eset = new("ExpressionSet", exprs = raw_counts_for_eset) # in case of wanting to use the vst normalized data, use 'exprs = vst'
+eset_brunello = new("ExpressionSet", exprs = raw_counts_for_eset_brunello) # in case of wanting to use the vst normalized data, use 'exprs = vst'
 
 # which is the order of sample names in eset
-sample_order = colnames(eset)
+sample_order = colnames(eset_brunello)
 
 # which is the order of sgRNA ids in eset
-grna_order = rownames(eset) # takes the first column
+grna_order = rownames(eset_brunello) # takes the first column
 
 
 ### add sample info to eset's 'phenoData' section
@@ -245,14 +247,14 @@ grna_order = rownames(eset) # takes the first column
 # make sure order of sampleinfo's rows is the same as in the eset, i.e. 'sample_order'
 # only samples that are BOTH in the counts AND sampleinfo tables are included (in theory, all of them)
 sampleinfo_sorted = left_join(data.frame(sample = sample_order),
-                              sampleinfo_3_datasets,
+                              sampleinfo_3_brunello_datasets,
                               by = "sample")
 
-pData(eset) = sampleinfo_sorted # columns: sample, id, cell_line, TP53, HMCES, A3A_vector, treatment, time, replicate
+pData(eset_brunello) = sampleinfo_sorted # columns: sample, id, cell_line, TP53, HMCES, A3A_vector, treatment, time, replicate
 
 
 ## set the phenoData's conditions that are categorical variables as factors: either unordered (use 'dummy' contrasts by default), or unordered (treatment and time, set contrasts below)
-eset$cell_line = factor(eset$cell_line,
+eset_brunello$cell_line = factor(eset_brunello$cell_line,
                         ordered = FALSE,
                         levels = c("A549_TP53KO_HMCESwt",
                                    "A549_TP53wt_HMCESwt",
@@ -269,81 +271,304 @@ eset$cell_line = factor(eset$cell_line,
                                    "K562"))
 
 # categorize time variable into ordered factor (time_cat)
-pData(eset) %<>%
+pData(eset_brunello) %<>%
   mutate(time_cat = ifelse(time == 0,
                            yes = "time_0",
-                           no = ifelse(time %in% c(3,5,6,7,9,10),
-                                       yes = "time_3_5_6_7_9_10",
-                                       no = ifelse(time %in% c(12,14,15),
-                                                   yes = "time_12_14_15",
+                           no = ifelse(time %in% c(3:10),
+                                       yes = "time_mid",
+                                       no = ifelse(time %in% c(12:21),
+                                                   yes = "time_late",
                                                    # if including treated samples, there will be other time points, which should be accounted for
-                                                   no = "Warning: time point other than 0,3,5,6,7,9,10,12,14,15"))),
+                                                   no = "Warning: time point other than 0, 3:10, 12:21"))),
          # set time_cat as ordered factor, and levels order
          time_cat = factor(time_cat,
                            ordered = TRUE,
                            levels = c("time_0",
-                                      "time_3_5_6_7_9_10",
-                                      "time_12_14_15")))
+                                      "time_mid",
+                                      "time_late")))
 
 ## list of conditions (column names in 'sampleinfo'):
-# "cell_line","TP53","HMCES","A3A_vector","treatment","time","replicate","treatment_recat","time_cat"
-conditions = names(pData(eset))[! names(pData(eset)) %in% c("sample", "time")]
+conditions_brunello = names(pData(eset_brunello))[! names(pData(eset_brunello)) %in% c("sample", "time")]
 
 
 ### add library info to eset's 'featureData' section
 
 # make sure order of grna_library's rows is the same as in the eset, i.e. 'grna_order'
 # only sgRNAs that are BOTH in the counts AND library tables are included (in theory, all of them)
-grna_library_sorted = left_join(data.frame(sgRNA_id = grna_order),
-                                grna_library,
+brunello_library_sorted = left_join(data.frame(sgRNA_id = grna_order),
+                                brunello_library,
                                 by = "sgRNA_id")
 
-fData(eset) = grna_library_sorted
+fData(eset_brunello) = brunello_library_sorted
 
 
 ## phenoData's 'sampleNames' section are just numbers -- replace with the actual sample names (SHOULD BE IN THE SAME ORDER)
-sampleNames(eset) = eset$sample
+sampleNames(eset_brunello) = eset_brunello$sample
 
 
 ## save processed data
-save(eset,
-     file = paste0(dataDir, "eset.RData"))
+save(eset_brunello,
+     file = paste0(dataDir, "eset_brunello.RData"))
 # load it to save time
-#load(file = paste0(dataDir, "eset.RData")) ; conditions = names(pData(eset))[! names(pData(eset)) %in% c("sample", "time")]
+#load(file = paste0(dataDir, "eset_brunello.RData")) ; conditions = names(pData(eset_brunello))[! names(pData(eset_brunello)) %in% c("sample", "time")]
 
 
 
 
-#### NB regression
+#######################################################################################################################
 
-# IMPORTANT: depending on the analysis, change formula in src/functions.R
+#### 2) TKO v1 datasets
 
-### run NB regression (loop across cell lines and genes) --> for full A3A dataset, it takes 8? hours in fsupeksvr
+### load sgRNAs library (TKOv1), common for the 2 datasets
+control_grnas = vroom("/g/strcombio/fsupek_data/CRISPR/4_resources/crispr_libraries/TKO/v1/control_sgRNAs_TKO_v1.txt", col_names = F, delim = " ") %>%
+  separate(X1, into = c("prefix", "seq")) %>%
+  pull(seq)
+tkov1_library = vroom("/g/strcombio/fsupek_data/CRISPR/4_resources/crispr_libraries/TKO/v1/full/base/GSE128210_TKOv1-lib1-Human-Library.txt") %>%
+  rename("gene" = "GENE",
+         "sgRNA Target Sequence" = "SEQUENCE") %>%
+  unite(col = "sgRNA", gene, `sgRNA Target Sequence`, remove = F) %>% 
+  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
+  mutate(gene = ifelse(`sgRNA Target Sequence` %in% control_grnas,
+                       "control",
+                       gene)) %>%
+  # combine sgRNA and gene into an id
+  unite(col = "sgRNA_id", sgRNA, gene, sep = "__", remove = F) %>%
+  # keep interesting columns
+  select(sgRNA_id, sgRNA, gene, "sgRNA Target Sequence", EXON) %>%
+  # sort
+  arrange(gene, sgRNA)
 
-cell_line_names = pData(eset) %>%
-  select(cell_line) %>%
-  distinct() %>%
-  filter(! str_detect(cell_line, "H358")) %>% # H358 does not have control samples
-  pull(cell_line)
 
-gene_names = fData(eset) %>%
-  select(gene) %>%
-  filter(gene != "Non-Targeting") %>%
-  distinct() %>%
-  pull(gene)
+# raw data's root path
+tkov1_rawPath = "/g/strcombio/fsupek_cancer3/malvarez/public_CRISPR_data/1_raw_data/"
 
-type_treatment = "control" # for the moment, only controls will be used
+
+#############################################
+## iv) Moffat lab
+# cell lines --> RPE1
+# treatments --> control
+# altered genotypes --> no (p53wt)
+
+moffat_Dir = paste0(tkov1_rawPath, "isogenic_pairs_TP53/RPE1_moffat_lab/")
+
+# load raw counts table
+raw_counts_moffat = vroom(paste0(moffat_Dir, "GSE128210_Hart_et_al_Cell2015_RPE1-TKOv1-readcounts.txt")) %>%
+  rename("sgRNA" = "GENE_CLONE",
+         "gene" = "GENE") %>%
+  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
+  separate(sgRNA, into = c("gene2", "seq"), sep = "_", remove = F) %>%
+  mutate(gene = ifelse(seq %in% control_grnas,
+                       "control",
+                       gene)) %>%
+  select(-c(seq, gene2))
+
+# load sample info 
+sampleinfo_moffat = vroom(paste0(moffat_Dir, "sample_info_RPE1_p53wt_tkov1_moffat.tsv"))
+
+########################################
+## v) Durocher lab
+# cell lines --> RPE1, HeLa, SUM149PT
+# treatments --> control
+# altered genotypes --> no
+
+durocher_Dir = paste0(tkov1_rawPath, "olaparib/DD0001_HeLa_RPE1_SUM149PT/")
+
+# load raw counts table
+raw_counts_durocher_RPE1 = vroom(paste0(durocher_Dir, "DD001_RPE1_CTRL.readcounts.txt")) %>%
+  separate(GENE_CLONE, into = c("gene", "seq"), sep = "_", remove = F) %>%
+  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
+  mutate(gene = ifelse(seq %in% control_grnas,
+                       "control",
+                       gene)) %>%
+  select(-seq) %>%
+  rename("sgRNA" = "GENE_CLONE")
+
+raw_counts_durocher_HeLa = vroom(paste0(durocher_Dir, "DD001_HeLa_CTRL.withrepBT15.readcounts.txt")) %>%
+  separate(GENE_CLONE, into = c("gene", "seq"), sep = "_", remove = F) %>%
+  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
+  mutate(gene = ifelse(seq %in% control_grnas,
+                       "control",
+                       gene)) %>%
+  select(-seq) %>%
+  rename("sgRNA" = "GENE_CLONE")
+
+raw_counts_durocher_SUM149PT = vroom(paste0(durocher_Dir, "DD001_SUM149PT_CTRL.readcounts.txt")) %>%
+  separate(GENE_CLONE, into = c("gene", "seq"), sep = "_", remove = F) %>%
+  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
+  mutate(gene = ifelse(seq %in% control_grnas,
+                       "control",
+                       gene)) %>%
+  select(-seq) %>%
+  rename("sgRNA" = "GENE_CLONE")
+
+# load sample info 
+sampleinfo_durocher = vroom(paste0(durocher_Dir, "sample_info.tsv"))
+
+
+#### combine datasets
+raw_counts_2_tkov1_datasets = merge(raw_counts_moffat, raw_counts_durocher_RPE1) %>%
+  merge(raw_counts_durocher_HeLa) %>%
+  merge(raw_counts_durocher_SUM149PT)
+
+sampleinfo_2_tkov1_datasets = merge(sampleinfo_moffat, sampleinfo_durocher, all = T) %>%
+  # control or treated
+  mutate(type = ifelse(treatment == "no",
+                       "control",
+                       "treated")) %>%
+  select(sample, cell_line, time, type, replicate) %>%
+  arrange(cell_line, time, type, replicate)
+
+sampleinfo_2_tkov1_datasets %>%
+  filter(type == "control") %>%
+  select(cell_line, time) %>%
+  table()
+#     time 0 9 12 15 18 21
+#---------------------------
+# HeLa     1 3  0  3  0  3
+# RPE1     2 4  4  4  4  2
+# SUM149PT 1 3  3  3  3  3
+
+
+#### normalize count matrix (to allow comparisons between samples)
+
+## as tko contains control sgRNAs, we can simply use the ln(sum(control sgRNA counts)) as an offset in the NB regression
+# store this offset in a table for later adding it to the data frames created in buildDF()
+raw_counts_offset_tkov1 = raw_counts_2_tkov1_datasets %>%
+  # long format
+  gather(key = "sample",
+         value = "counts",
+         -c(sgRNA, gene)) %>%
+  group_by(sample) %>%
+  # create offset column
+  mutate(ln_sum_nontargeting = log(sum(ifelse(gene == "control",
+                                              yes = counts,
+                                              no = 0),
+                                       na.rm = TRUE))) %>%
+  select(sample, ln_sum_nontargeting) %>%
+  distinct()
+
+
+# prepare raw counts table for conversion into eset
+raw_counts_for_eset_tkov1 = raw_counts_2_tkov1_datasets %>%
+  # combine sgRNA and gene into an id
+  unite(col = "sgRNA_id", sgRNA, gene, sep = "__") %>%
+  # sgRNA_id to row names
+  column_to_rownames("sgRNA_id") %>%
+  # ExpressionSet requires a matrix object as input
+  as.matrix()
+
+
+#### store data as Biobase's 'ExpressionSets' (esets)
+
+eset_tkov1 = new("ExpressionSet", exprs = raw_counts_for_eset_tkov1) # in case of wanting to use the vst normalized data, use 'exprs = vst'
+
+# which is the order of sample names in eset
+sample_order = colnames(eset_tkov1)
+
+# which is the order of sgRNA ids in eset
+grna_order = rownames(eset_tkov1) # takes the first column
+
+
+### add sample info to eset's 'phenoData' section
+
+# make sure order of sampleinfo's rows is the same as in the eset, i.e. 'sample_order'
+# only samples that are BOTH in the counts AND sampleinfo tables are included (in theory, all of them)
+sampleinfo_sorted = left_join(data.frame(sample = sample_order),
+                              sampleinfo_2_tkov1_datasets,
+                              by = "sample")
+
+pData(eset_tkov1) = sampleinfo_sorted # columns: sample, id, cell_line, TP53, HMCES, A3A_vector, treatment, time, replicate
+
+
+## set the phenoData's conditions that are categorical variables as factors: either unordered (use 'dummy' contrasts by default), or unordered (treatment and time, set contrasts below)
+eset_tkov1$cell_line = factor(eset_tkov1$cell_line,
+                                 ordered = FALSE,
+                                 levels = c("RPE1",
+                                            "HeLa",
+                                            "SUM149PT"))
+
+# categorize time variable into ordered factor (time_cat)
+pData(eset_tkov1) %<>%
+  mutate(time_cat = ifelse(time == 0,
+                           yes = "time_0",
+                           no = ifelse(time %in% c(3:10),
+                                       yes = "time_mid",
+                                       no = ifelse(time %in% c(12:21),
+                                                   yes = "time_late",
+                                                   # if including treated samples, there will be other time points, which should be accounted for
+                                                   no = "Warning: time point other than 0, 3:10, 12:21"))),
+         # set time_cat as ordered factor, and levels order
+         time_cat = factor(time_cat,
+                           ordered = TRUE,
+                           levels = c("time_0",
+                                      "time_mid",
+                                      "time_late")))
+
+## list of conditions (column names in 'sampleinfo'):
+conditions_tkov1 = names(pData(eset_tkov1))[! names(pData(eset_tkov1)) %in% c("sample", "time")]
+
+
+### add library info to eset's 'featureData' section
+
+# make sure order of grna_library's rows is the same as in the eset, i.e. 'grna_order'
+# only sgRNAs that are BOTH in the counts AND library tables are included (in theory, all of them)
+tkov1_library_sorted = left_join(data.frame(sgRNA_id = grna_order),
+                                    tkov1_library,
+                                    by = "sgRNA_id")
+
+fData(eset_tkov1) = tkov1_library_sorted
+
+
+## phenoData's 'sampleNames' section are just numbers -- replace with the actual sample names (SHOULD BE IN THE SAME ORDER)
+sampleNames(eset_tkov1) = eset_tkov1$sample
+
+
+## save processed data
+save(eset_tkov1,
+     file = paste0(dataDir, "eset_tkov1.RData"))
+# load it to save time
+#load(file = paste0(dataDir, "eset_tkov1.RData")) ; conditions = names(pData(eset_tkov1))[! names(pData(eset_tkov1)) %in% c("sample", "time")]
+
+
+
+
+#######################################################################################################################
+
+
+#### NB regressions
+
+# for the moment, only controls will be used
+type_treatment = "control"
 
 ### load NB regression custom functions
 source("src/functions.R")
 
+## create NBres object to store everything
 NBres = list()
 
 # turning off warning messages globally for the loop
 options(warn=-1)
 
-print(paste0("Running NB regressions on " , length(gene_names), " genes for ", length(gene_names), " cell lines:"))
-             
+
+### start with Brunello data
+
+print("Starting with Brunello datasets")
+
+cell_line_names = pData(eset_brunello) %>%
+  select(cell_line) %>%
+  distinct() %>%
+  filter(! str_detect(cell_line, "H358")) %>% # H358 does not have control samples
+  pull(cell_line)
+
+gene_names = fData(eset_brunello) %>%
+  select(gene) %>%
+  filter(gene != "Non-Targeting") %>%
+  distinct() %>%
+  pull(gene)
+
+print(paste0("Running NB regressions on " , length(gene_names), " genes for ", length(cell_line_names), " cell lines:"))
+
+# NB loop across cell lines and genes
 for (cLine in cell_line_names){
 
   print(paste0("Analyzing cell line ", cLine))
@@ -351,10 +576,47 @@ for (cLine in cell_line_names){
   NBres_1_cell_line = mclapply(gene_names, function(g){
     
     # build dataframe (for a given gene) for regression
-    df = buildDF(g, eset, conditions, raw_counts_offset, cLine, type_treatment)
+    df = buildDF(g, eset_brunello, conditions_brunello, raw_counts_offset_brunello, cLine, type_treatment)
     
     # run NB regression on that gene
-    y = fitModel(g, eset, conditions, df)
+    y = fitModel(g, eset_brunello, conditions_brunello, df)
+    
+  }, mc.cores = 5)
+  
+  # name elements by their analyzed gene's name
+  names(NBres_1_cell_line) = gene_names
+  
+  # append to full NBres
+  NBres[[cLine]] = NBres_1_cell_line
+}
+
+print("Continuing with TKO v1 datasets")
+
+cell_line_names = pData(eset_tkov1) %>%
+  select(cell_line) %>%
+  distinct() %>%
+  pull(cell_line)
+
+gene_names = fData(eset_tkov1) %>%
+  select(gene) %>%
+  filter(gene != "control") %>%
+  distinct() %>%
+  pull(gene)
+
+print(paste0("Running NB regressions on " , length(gene_names), " genes for ", length(cell_line_names), " cell lines:"))
+
+# NB loop across cell lines and genes
+for (cLine in cell_line_names){
+  
+  print(paste0("Analyzing cell line ", cLine))
+  
+  NBres_1_cell_line = mclapply(gene_names, function(g){
+    
+    # build dataframe (for a given gene) for regression
+    df = buildDF(g, eset_tkov1, conditions_tkov1, raw_counts_offset_tkov1, cLine, type_treatment)
+    
+    # run NB regression on that gene
+    y = fitModel(g, eset_tkov1, conditions_tkov1, df)
     
   }, mc.cores = 5)
   

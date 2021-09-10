@@ -1,13 +1,25 @@
-run analysis for olaparib and moffat p53wt RPE1 isogenic pair? (multiple time points, TKOv1)
+add mageck non-essentials for offtarget
+
+
+in nb loop, store only y
+
+
+create table of genes (rows) and columns (samples) for each library. gather each. rbind. then create a 3rd col for estimate of time_cat.Q, and a 4th for its pval.
+
+loop through nb list, doing the summary(y) and keeping the estimate and pval of time_cat.Q only, passing them to the 3rd and 4th cols in table
+
+calculate fdr (qvalues). add to them the sign of the estimate (concave or convex). rm estimate and pval. pivot_wider, again rows genes and cols samples.
 
 
 gene hit ascertainment
 ----------------------
 
-	FILTER1: FDR<0.05 in time_cat.Q
+FILTER: for each sign, FDR<|0.05| in time_cat.Q, overlapping across many control cell lines
 
-	FILTER2: hit overlap across 7 control cell lines
 
-	FILTER3: draw hit curves (plot_model) to check that they match across cell lines
+downstream
+----------
 
-	FILTER4: GO set enrichment of gene hits can provide more insights
+Draw hit curves (plot_model)
+
+GO set enrichment of gene hits can provide more insights
