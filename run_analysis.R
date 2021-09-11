@@ -5,36 +5,20 @@ library(dplyr)
 library(tidyr)
 library(tibble)
 library(stringr)
-library(DESeq2)
-library(ggplot2)
-# library(gplots)
-# library(ggpubr)
-library(MASS)
 library(purrr)
-# library(broom)
-# library(stringr)
-# library(safejoin)
-library(data.table)
+library(readr)
+library(DESeq2)
+library(MASS)
+library(ggplot2)
 # library(effects)          # plot interaction terms
-# library(readr)
-# library(safejoin)
-# library(devtools)
 # library(sjmisc)           # for plot_model function
 # library(sjPlot)           # for plot_model function
-# library(ggiraphExtra)
-# library(insight)
-# library(moonBook)
-# library(ggeffects)
-# library(Biobase)
-# 
 
 # resolve function conflicts
 library(conflicted)
 conflict_prefer("rename", "dplyr")
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
-#conflict_prefer("melt", "data.table")
-#conflict_prefer("desc", "dplyr")
 
 
 
@@ -55,6 +39,10 @@ figDir = paste0(outDir, 'figs/') ; dir.create(figDir, recursive = TRUE)
 tmpDir = "/local_scratch/malvarez/chrysper/tmp/"
 
 
+# 350 non-essential genes (MAGeCK-defined) for offset
+nonessentials = vroom("/g/strcombio/fsupek_cancer3/malvarez/genes_info/essentiality/core_sets/nonessential/mageck/mageck_nonessential_genes_count_normalization.txt", col_names = F, delim = " ")$X1
+
+
 
 ################################################################################################
 
@@ -68,8 +56,11 @@ rawPath = "/g/strcombio/fsupek_data/CRISPR/"
 
 ### load sgRNAs library (Brunello), common for the 3 datasets
 brunello_library = vroom(paste0(rawPath, "4_resources/crispr_libraries/brunello/original/broadgpp-brunello-library-contents_gRNAs.tsv")) %>%
-  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
-  mutate(gene = gsub(" Control$","", gene)) %>%
+  # update control sgRNAs name (non-targeting or non-essential, for offset later)
+  mutate(gene = ifelse(str_detect(gene, "Non-Targeting") |
+                         gene %in% nonessentials,
+                       "control",
+                       gene)) %>%
   # combine sgRNA and gene into an id
   unite(col = "sgRNA_id", sgRNA, gene, sep = "__", remove = F) %>%
   # keep interesting columns
@@ -151,7 +142,12 @@ sampleinfo_oxygen = vroom(paste0(oxygen_Dir, "sampleinfo.tsv"))
 
 #### combine datasets
 raw_counts_3_brunello_datasets = merge(raw_counts_A3A, raw_counts_ATRi_TMZ) %>%
-  merge(raw_counts_oxygen)
+  merge(raw_counts_oxygen) %>%
+  # mark genes or non-targeting sgRNAs used later for offset
+  mutate(gene = ifelse(gene == "Non-Targeting" |
+                         gene %in% nonessentials,
+                       "control",
+                       gene))
 
 sampleinfo_3_brunello_datasets = merge(sampleinfo_A3A, sampleinfo_ATRi_TMZ, all = T) %>%
   merge(sampleinfo_oxygen, all = T) %>%
@@ -204,7 +200,7 @@ sampleinfo_3_brunello_datasets %>%
 
 #### normalize count matrix (to allow comparisons between samples)
 
-## as Brunello contains control non-targeting sgRNAs, we can simply use the ln(sum(Non-Targeting sgRNA counts)) as an offset in the NB regression
+## use the ln(sum(Non-Targeting sgRNA and 350 non-essential genes counts)) as an offset in the NB regression
 # store this offset in a table for later adding it to the data frames created in buildDF()
 raw_counts_offset_brunello = raw_counts_3_brunello_datasets %>%
   # long format
@@ -213,13 +209,15 @@ raw_counts_offset_brunello = raw_counts_3_brunello_datasets %>%
          -c(sgRNA, gene)) %>%
   group_by(sample) %>%
   # create offset column
-  mutate(ln_sum_nontargeting = log(sum(ifelse(gene == "Non-Targeting",
+  mutate(ln_sum_control = log(sum(ifelse(gene == "control",
                                               yes = counts,
                                               no = 0),
                                        na.rm = TRUE))) %>%
-  select(sample, ln_sum_nontargeting) %>%
+  select(sample, ln_sum_control) %>%
   distinct()
 
+
+#### store data as Biobase's 'ExpressionSets' (esets): a Class to Contain and Describe High-Throughput Expression Level Assays
 
 # prepare raw counts table for conversion into eset
 raw_counts_for_eset_brunello = raw_counts_3_brunello_datasets %>%
@@ -229,9 +227,6 @@ raw_counts_for_eset_brunello = raw_counts_3_brunello_datasets %>%
   column_to_rownames("sgRNA_id") %>%
   # ExpressionSet requires a matrix object as input
   as.matrix()
-
-
-#### store data as Biobase's 'ExpressionSets' (esets): a Class to Contain and Describe High-Throughput Expression Level Assays
 
 eset_brunello = new("ExpressionSet", exprs = raw_counts_for_eset_brunello) # in case of wanting to use the vst normalized data, use 'exprs = vst'
 
@@ -258,7 +253,7 @@ eset_brunello$cell_line = factor(eset_brunello$cell_line,
                         ordered = FALSE,
                         levels = c("A549_TP53KO_HMCESwt",
                                    "A549_TP53wt_HMCESwt",
-                                   "LXF289_TP53mut_HMCESKO",
+                                   "LXF289_TP53mut_HMCESKO", # this cell line does not have control samples (woDOX + A3A, but this might be not a true control)
                                    "LXF289_TP53mut_HMCESwt",
                                    "H358_TP53mut_HMCESwt",   # this cell line does not have control samples
                                    "HT29_ARID1Awt_MSH6KO",
@@ -327,8 +322,9 @@ tkov1_library = vroom("/g/strcombio/fsupek_data/CRISPR/4_resources/crispr_librar
   rename("gene" = "GENE",
          "sgRNA Target Sequence" = "SEQUENCE") %>%
   unite(col = "sgRNA", gene, `sgRNA Target Sequence`, remove = F) %>% 
-  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
-  mutate(gene = ifelse(`sgRNA Target Sequence` %in% control_grnas,
+  # update control sgRNAs name
+  mutate(gene = ifelse(`sgRNA Target Sequence` %in% control_grnas |
+                         gene %in% nonessentials,
                        "control",
                        gene)) %>%
   # combine sgRNA and gene into an id
@@ -355,9 +351,10 @@ moffat_Dir = paste0(tkov1_rawPath, "isogenic_pairs_TP53/RPE1_moffat_lab/")
 raw_counts_moffat = vroom(paste0(moffat_Dir, "GSE128210_Hart_et_al_Cell2015_RPE1-TKOv1-readcounts.txt")) %>%
   rename("sgRNA" = "GENE_CLONE",
          "gene" = "GENE") %>%
-  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
   separate(sgRNA, into = c("gene2", "seq"), sep = "_", remove = F) %>%
-  mutate(gene = ifelse(seq %in% control_grnas,
+  # update control sgRNAs name
+  mutate(gene = ifelse(seq %in% control_grnas |
+                         gene %in% nonessentials,
                        "control",
                        gene)) %>%
   select(-c(seq, gene2))
@@ -376,8 +373,9 @@ durocher_Dir = paste0(tkov1_rawPath, "olaparib/DD0001_HeLa_RPE1_SUM149PT/")
 # load raw counts table
 raw_counts_durocher_RPE1 = vroom(paste0(durocher_Dir, "DD001_RPE1_CTRL.readcounts.txt")) %>%
   separate(GENE_CLONE, into = c("gene", "seq"), sep = "_", remove = F) %>%
-  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
-  mutate(gene = ifelse(seq %in% control_grnas,
+  # update control sgRNAs name
+  mutate(gene = ifelse(seq %in% control_grnas |
+                         gene %in% nonessentials,
                        "control",
                        gene)) %>%
   select(-seq) %>%
@@ -385,8 +383,9 @@ raw_counts_durocher_RPE1 = vroom(paste0(durocher_Dir, "DD001_RPE1_CTRL.readcount
 
 raw_counts_durocher_HeLa = vroom(paste0(durocher_Dir, "DD001_HeLa_CTRL.withrepBT15.readcounts.txt")) %>%
   separate(GENE_CLONE, into = c("gene", "seq"), sep = "_", remove = F) %>%
-  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
-  mutate(gene = ifelse(seq %in% control_grnas,
+  # update control sgRNAs name
+  mutate(gene = ifelse(seq %in% control_grnas |
+                         gene %in% nonessentials,
                        "control",
                        gene)) %>%
   select(-seq) %>%
@@ -394,8 +393,9 @@ raw_counts_durocher_HeLa = vroom(paste0(durocher_Dir, "DD001_HeLa_CTRL.withrepBT
 
 raw_counts_durocher_SUM149PT = vroom(paste0(durocher_Dir, "DD001_SUM149PT_CTRL.readcounts.txt")) %>%
   separate(GENE_CLONE, into = c("gene", "seq"), sep = "_", remove = F) %>%
-  # update Non-Targeting sgRNAs name (remove trailing " Control" part)
-  mutate(gene = ifelse(seq %in% control_grnas,
+  # update control sgRNAs name
+  mutate(gene = ifelse(seq %in% control_grnas |
+                         gene %in% nonessentials,
                        "control",
                        gene)) %>%
   select(-seq) %>%
@@ -431,7 +431,7 @@ sampleinfo_2_tkov1_datasets %>%
 
 #### normalize count matrix (to allow comparisons between samples)
 
-## as tko contains control sgRNAs, we can simply use the ln(sum(control sgRNA counts)) as an offset in the NB regression
+## use the ln(sum(control sgRNA and 350 non-essential genes counts)) as an offset in the NB regression
 # store this offset in a table for later adding it to the data frames created in buildDF()
 raw_counts_offset_tkov1 = raw_counts_2_tkov1_datasets %>%
   # long format
@@ -440,13 +440,16 @@ raw_counts_offset_tkov1 = raw_counts_2_tkov1_datasets %>%
          -c(sgRNA, gene)) %>%
   group_by(sample) %>%
   # create offset column
-  mutate(ln_sum_nontargeting = log(sum(ifelse(gene == "control",
+  mutate(ln_sum_control = log(sum(ifelse(gene == "control",
                                               yes = counts,
                                               no = 0),
                                        na.rm = TRUE))) %>%
-  select(sample, ln_sum_nontargeting) %>%
+  select(sample, ln_sum_control) %>%
   distinct()
 
+
+
+#### store data as Biobase's 'ExpressionSets' (esets)
 
 # prepare raw counts table for conversion into eset
 raw_counts_for_eset_tkov1 = raw_counts_2_tkov1_datasets %>%
@@ -456,9 +459,6 @@ raw_counts_for_eset_tkov1 = raw_counts_2_tkov1_datasets %>%
   column_to_rownames("sgRNA_id") %>%
   # ExpressionSet requires a matrix object as input
   as.matrix()
-
-
-#### store data as Biobase's 'ExpressionSets' (esets)
 
 eset_tkov1 = new("ExpressionSet", exprs = raw_counts_for_eset_tkov1) # in case of wanting to use the vst normalized data, use 'exprs = vst'
 
@@ -537,8 +537,6 @@ save(eset_tkov1,
 
 #### NB regressions
 
-# for the moment, only controls will be used
-type_treatment = "control"
 
 ### load NB regression custom functions
 source("src/functions.R")
@@ -546,27 +544,46 @@ source("src/functions.R")
 ## create NBres object to store everything
 NBres = list()
 
-# turning off warning messages globally for the loop
-options(warn=-1)
-
 
 ### start with Brunello data
 
 print("Starting with Brunello datasets")
 
-cell_line_names = pData(eset_brunello) %>%
-  select(cell_line) %>%
-  distinct() %>%
-  filter(! str_detect(cell_line, "H358")) %>% # H358 does not have control samples
-  pull(cell_line)
-
 gene_names = fData(eset_brunello) %>%
   select(gene) %>%
-  filter(gene != "Non-Targeting") %>%
+  filter(gene != "control") %>%
   distinct() %>%
   pull(gene)
 
-print(paste0("Running NB regressions on " , length(gene_names), " genes for ", length(cell_line_names), " cell lines:"))
+cell_line_names = pData(eset_brunello) %>%
+  select(cell_line) %>%
+  distinct() %>%
+  filter(! str_detect(cell_line, "H358|LXF289_TP53mut_HMCESKO")) %>% # H358 and LXF289_TP53mut_HMCESKO do not have control samples
+  pull(cell_line)
+
+
+## first do regressions for each gene, with all (control) cell lines pooled
+
+print(paste0("Running NB regressions on " , length(gene_names), " genes for all ", length(cell_line_names), " cell lines pooled"))
+
+# NB loop across genes
+NBres[["Brunello_pooled"]] = mclapply(gene_names, function(g){
+    
+  # build dataframe (for a given gene) for regression
+  df = buildDF(g, eset_brunello, conditions_brunello, raw_counts_offset_brunello, cLine="pooled", type_treatment="control")
+  
+  # run NB regression on that gene
+  y = fitModel(df)
+    
+}, mc.cores = 30)
+  
+# name elements by their analyzed gene's name
+names(NBres[["Brunello_pooled"]]) = gene_names
+
+
+## now do regressions for each gene, for each cell line separately
+
+print(paste0("Now running NB regressions on " , length(gene_names), " genes for ", length(cell_line_names), " cell lines separately"))
 
 # NB loop across cell lines and genes
 for (cLine in cell_line_names){
@@ -576,12 +593,12 @@ for (cLine in cell_line_names){
   NBres_1_cell_line = mclapply(gene_names, function(g){
     
     # build dataframe (for a given gene) for regression
-    df = buildDF(g, eset_brunello, conditions_brunello, raw_counts_offset_brunello, cLine, type_treatment)
+    df = buildDF(g, eset_brunello, conditions_brunello, raw_counts_offset_brunello, cLine, type_treatment="control")
     
     # run NB regression on that gene
-    y = fitModel(g, eset_brunello, conditions_brunello, df)
+    y = fitModel(df)
     
-  }, mc.cores = 5)
+  }, mc.cores = 30)
   
   # name elements by their analyzed gene's name
   names(NBres_1_cell_line) = gene_names
@@ -590,7 +607,10 @@ for (cLine in cell_line_names){
   NBres[[cLine]] = NBres_1_cell_line
 }
 
-print("Continuing with TKO v1 datasets")
+
+### now TKO v1
+
+print("Continue with TKO v1 datasets")
 
 cell_line_names = pData(eset_tkov1) %>%
   select(cell_line) %>%
@@ -603,7 +623,28 @@ gene_names = fData(eset_tkov1) %>%
   distinct() %>%
   pull(gene)
 
-print(paste0("Running NB regressions on " , length(gene_names), " genes for ", length(cell_line_names), " cell lines:"))
+## first do regressions for each gene, with all (control) cell lines pooled
+
+print(paste0("Running NB regressions on " , length(gene_names), " genes for all ", length(cell_line_names), " cell lines pooled"))
+
+# NB loop across genes
+NBres[["TKOv1_pooled"]] = mclapply(gene_names, function(g){
+  
+  # build dataframe (for a given gene) for regression
+  df = buildDF(g, eset_tkov1, conditions_tkov1, raw_counts_offset_tkov1, cLine="pooled", type_treatment="control")
+  
+  # run NB regression on that gene
+  y = fitModel(df)
+  
+}, mc.cores = 30)
+
+# name elements by their analyzed gene's name
+names(NBres[["TKOv1_pooled"]]) = gene_names
+
+
+## now do regressions for each gene, for each cell line separately
+
+print(paste0("Running NB regressions on " , length(gene_names), " genes for ", length(cell_line_names), " cell lines separately"))
 
 # NB loop across cell lines and genes
 for (cLine in cell_line_names){
@@ -613,12 +654,12 @@ for (cLine in cell_line_names){
   NBres_1_cell_line = mclapply(gene_names, function(g){
     
     # build dataframe (for a given gene) for regression
-    df = buildDF(g, eset_tkov1, conditions_tkov1, raw_counts_offset_tkov1, cLine, type_treatment)
+    df = buildDF(g, eset_tkov1, conditions_tkov1, raw_counts_offset_tkov1, cLine, type_treatment="control")
     
     # run NB regression on that gene
-    y = fitModel(g, eset_tkov1, conditions_tkov1, df)
+    y = fitModel(df)
     
-  }, mc.cores = 5)
+  }, mc.cores = 30)
   
   # name elements by their analyzed gene's name
   names(NBres_1_cell_line) = gene_names
@@ -628,9 +669,6 @@ for (cLine in cell_line_names){
 }
 
 print("NB regressions finished!")
-
-# warnings back
-options(warn=0)
 
 ## save processed data
 save(NBres, file = paste0(dataDir, "NBres.RData"))
@@ -725,14 +763,13 @@ save(NBres, file = paste0(dataDir, "NBres.RData"))
 # ## plot hits
 # 
 # for(gene in unique(hits$gene)){
-#   data_df = NBres[[gene]]$df
 #   data_model = NBres[[gene]]$model
-#   new_model_names = c('counts', 'time_cat', 'treatment_recat', 'ln_sum_nontargeting')
+#   new_model_names = c('counts', 'time_cat', 'treatment_recat', 'ln_sum_control')
 #   names(data_model$model) = new_model_names
 #   p_model = plot_model(data_model, 
 #                        type = "pred", 
 #                        terms = c('time_cat', 'treatment_recat'),
-#                        value.offset = 'ln_sum_nontargeting') +
+#                        value.offset = 'ln_sum_control') +
 #     geom_line() +
 #     ggtitle(gene) +
 #     theme_minimal()

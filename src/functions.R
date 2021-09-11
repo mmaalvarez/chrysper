@@ -1,5 +1,5 @@
 
-#### build dataframe (for one gene) for regression
+#### build dataframe (for one gene, one cell line, and one type of treatment) to feed into the regression
 buildDF = function(g, eset, conditions, offset, cLine, type_treatment){
   
   # extract gene from eset
@@ -28,90 +28,31 @@ buildDF = function(g, eset, conditions, offset, cLine, type_treatment){
     }
   }
   
-  ## keep only cell line and type of treatment required
-  
+  ## keep only the type of treatment required
   df %<>%
-    filter(cell_line == cLine &
-             type == type_treatment)
+    filter(type == type_treatment)
   
-  # return df for NB fitting function "fitModel()"
+  ## and cell line, if not pooled
+  if (cLine != "pooled"){
+    df %<>%
+      filter(cell_line == cLine)
+  }
+
+  # return df for fitting function "fitModel()"
   df
 }
 
 
-
-#### run NB regression on one gene
-fitModel = function(g, eset, conditions, df){
+#### run regression on one gene, one/pooled cell line, and one type of treatment
+fitModel = function(df){
   
-  ### regression: generalized linear model, family negative binomial
-
-  formula = "counts ~ time_cat + offset(ln_sum_nontargeting)"
-
-  ## run NB regression
-  y = glm.nb(formula = formula,
-             data = df,
-             # see https://stackoverflow.com/questions/64002936/error-in-prettynum-internalformatx-trim-digits-nsmall-width-3l-invalid
-             control = glm.control(maxit = 500)) # maximal number of IWLS iterations (default 25, not enough)
+  formula = "counts ~ time_cat + offset(ln_sum_control)"
   
-  ## store summary (remove possible Error)
-  summary_y = try(summary(y), F)
-  
-  ## return list
-  list("df" = df,
-       "model summary" = summary_y)
+               # first try negative binomial generalized linear model
+  y = tryCatch(glm.nb(formula = formula, data = df),
+               # if there is a failure to converge to theta, run a Poisson generalized linear model
+               warning = function(w) glm(formula = formula, data = df, family = poisson),
+               error = function(e) glm(formula = formula, data = df, family = poisson))
+  ## return model
+  y
 }
-
-
-# ## OLD stuff returned in fitModel()
-
-# ### return list of:
-# # - df with fitted values
-# # - residual deviance significance (resdev)
-# # - condition levels count means
-# # - model (y)
-# # - model summary (estimates, pvals, residual deviance...)
-#
-# ## merge df with fitted counts for later checking real vs. fitted counts, we want them to be similar. Also extract experiment group as "id"
-# df %<>%
-#   rename("real counts" = "counts") %>%
-#   # extract experiment id
-#   mutate(id = gsub("_.*", "", sample),
-#          id = gsub("^[0-9]", "", id),
-#          id = gsub("^[0-9]", "", id),
-#          # add fitted counts
-#          `fitted counts` = fitted(y)) %>%
-#   select(-c(id))
-#
-# #by chance a residual deviance as far in value to the degrees of freedom
-# # chi-square's p-value of whether the difference between the residual deviance and the degrees of freedom of the model can be due to random effects
-# rd_df = pchisq(deviance(y),
-#                df = df.residual(y),
-#                # we don't want to reject the H0
-#                lower.tail = F)
-# 
-# ## count means at each condition level
-# x = eset[fData(eset)$gene == g, ]      # have to create x again, for some reason...
-# means = list()
-# for (condition in conditions){
-#   condition_column = pData(x)[df$sample, condition]
-#   if (is.null(condition_column) == FALSE){
-#     factor_means = tapply(df$counts,
-#                           condition_column,
-#                           mean)
-#     means[[condition]] = factor_means
-#   }
-# }
-# # convert list of means into data frame
-# means = melt(means,
-#              value.name = "count_means",
-#              varnames = c('level')) %>%
-#   rename("condition" = "L1") %>%
-#   select(condition, level, count_means) %>%
-#   drop_na()
-# 
-# ## return list
-# list("df" = df,
-#      "p-val resdev vs. d.f." = rd_df,
-#      "count means by factor level" = means,
-#      "model" = y,
-#      "model summary" = summary_y)

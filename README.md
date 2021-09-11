@@ -32,4 +32,4 @@ We want to detect PANCANCER non-linear gene essentiality:
 
 	hits found across different cancer lines, with some of them even having altered genotypes, thus they overlap different cancer genetic backgrounds
 	
-	using only untreated (no A3A, no ATRi, no TMZ), so that the gene essentiality is non-conditional to very stressful conditions
+	using only untreated (no A3A, no ATRi, no TMZ, normal O2%, no olaparib), so that the gene essentiality is non-conditional to very stressful conditions
