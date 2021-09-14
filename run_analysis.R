@@ -10,6 +10,8 @@ library(readr)
 library(DESeq2)
 library(MASS)
 library(ggplot2)
+library(broom)
+library(safejoin)
 # library(effects)          # plot interaction terms
 # library(sjmisc)           # for plot_model function
 # library(sjPlot)           # for plot_model function
@@ -303,9 +305,9 @@ sampleNames(eset_brunello) = eset_brunello$sample
 
 ## save processed data
 save(eset_brunello,
-     file = paste0(dataDir, "eset_brunello.RData"))
+     file = paste0(dataDir, "esets/eset_brunello.RData"))
 # load it to save time
-#load(file = paste0(dataDir, "eset_brunello.RData")) ; conditions = names(pData(eset_brunello))[! names(pData(eset_brunello)) %in% c("sample", "time")]
+#load(file = paste0(dataDir, "esets/eset_brunello.RData")) ; conditions = names(pData(eset_brunello))[! names(pData(eset_brunello)) %in% c("sample", "time")]
 
 
 
@@ -525,9 +527,9 @@ sampleNames(eset_tkov1) = eset_tkov1$sample
 
 ## save processed data
 save(eset_tkov1,
-     file = paste0(dataDir, "eset_tkov1.RData"))
+     file = paste0(dataDir, "esets/eset_tkov1.RData"))
 # load it to save time
-#load(file = paste0(dataDir, "eset_tkov1.RData")) ; conditions = names(pData(eset_tkov1))[! names(pData(eset_tkov1)) %in% c("sample", "time")]
+#load(file = paste0(dataDir, "esets/eset_tkov1.RData")) ; conditions = names(pData(eset_tkov1))[! names(pData(eset_tkov1)) %in% c("sample", "time")]
 
 
 
@@ -535,39 +537,44 @@ save(eset_tkov1,
 #######################################################################################################################
 
 
-#### NB regressions
+#### Prepare NB regressions
 
-
-### load NB regression custom functions
-source("src/functions.R")
-
-## create NBres object to store everything
-NBres = list()
-
-
-### start with Brunello data
-
-print("Starting with Brunello datasets")
-
-gene_names = fData(eset_brunello) %>%
+# cell line and gene names per library
+cell_line_names_brunello = pData(eset_brunello) %>%
+  select(cell_line) %>%
+  distinct() %>%
+  filter(! str_detect(cell_line, "H358|LXF289_TP53mut_HMCESKO")) %>% # H358 and LXF289_TP53mut_HMCESKO do not have control samples
+  pull(cell_line)
+cell_line_names_tkov1 = pData(eset_tkov1) %>%
+  select(cell_line) %>%
+  distinct() %>%
+  pull(cell_line)
+gene_names_brunello = fData(eset_brunello) %>%
+  select(gene) %>%
+  filter(gene != "control") %>%
+  distinct() %>%
+  pull(gene)
+gene_names_tkov1 = fData(eset_tkov1) %>%
   select(gene) %>%
   filter(gene != "control") %>%
   distinct() %>%
   pull(gene)
 
-cell_line_names = pData(eset_brunello) %>%
-  select(cell_line) %>%
-  distinct() %>%
-  filter(! str_detect(cell_line, "H358|LXF289_TP53mut_HMCESKO")) %>% # H358 and LXF289_TP53mut_HMCESKO do not have control samples
-  pull(cell_line)
 
+#### Start NB regressions
+
+### load NB regression custom functions
+source("src/functions.R")
+
+### start with Brunello data
+print("Starting with Brunello datasets")
 
 ## first do regressions for each gene, with all (control) cell lines pooled
-
-print(paste0("Running NB regressions on " , length(gene_names), " genes for all ", length(cell_line_names), " cell lines pooled"))
+print(paste0("Running NB regressions on " , length(gene_names_brunello), " genes for all ", length(cell_line_names_brunello), " cell lines pooled"))
 
 # NB loop across genes
-NBres[["Brunello_pooled"]] = mclapply(gene_names, function(g){
+NBres = list()
+NBres[["Brunello_pooled"]] = lapply(gene_names_brunello, function(g){ #mc
     
   # build dataframe (for a given gene) for regression
   df = buildDF(g, eset_brunello, conditions_brunello, raw_counts_offset_brunello, cLine="pooled", type_treatment="control")
@@ -575,22 +582,21 @@ NBres[["Brunello_pooled"]] = mclapply(gene_names, function(g){
   # run NB regression on that gene
   y = fitModel(df)
     
-}, mc.cores = 30)
+}) #, mc.preschedule=FALSE, mc.cores = 8) # with preschedule=T, >1 cores gives empty values (errors?) for some genes...
   
 # name elements by their analyzed gene's name
-names(NBres[["Brunello_pooled"]]) = gene_names
+names(NBres[["Brunello_pooled"]]) = gene_names_brunello
 
 
 ## now do regressions for each gene, for each cell line separately
-
-print(paste0("Now running NB regressions on " , length(gene_names), " genes for ", length(cell_line_names), " cell lines separately"))
+print(paste0("Now running NB regressions on " , length(gene_names_brunello), " genes for ", length(cell_line_names_brunello), " cell lines separately"))
 
 # NB loop across cell lines and genes
-for (cLine in cell_line_names){
+for (cLine in cell_line_names_brunello){
 
   print(paste0("Analyzing cell line ", cLine))
   
-  NBres_1_cell_line = mclapply(gene_names, function(g){
+  NBres_1_cell_line = lapply(gene_names_brunello, function(g){ #mc
     
     # build dataframe (for a given gene) for regression
     df = buildDF(g, eset_brunello, conditions_brunello, raw_counts_offset_brunello, cLine, type_treatment="control")
@@ -598,10 +604,10 @@ for (cLine in cell_line_names){
     # run NB regression on that gene
     y = fitModel(df)
     
-  }, mc.cores = 30)
+  }) #, mc.preschedule=FALSE, mc.cores = 8)
   
   # name elements by their analyzed gene's name
-  names(NBres_1_cell_line) = gene_names
+  names(NBres_1_cell_line) = gene_names_brunello
   
   # append to full NBres
   NBres[[cLine]] = NBres_1_cell_line
@@ -609,26 +615,13 @@ for (cLine in cell_line_names){
 
 
 ### now TKO v1
-
 print("Continue with TKO v1 datasets")
 
-cell_line_names = pData(eset_tkov1) %>%
-  select(cell_line) %>%
-  distinct() %>%
-  pull(cell_line)
-
-gene_names = fData(eset_tkov1) %>%
-  select(gene) %>%
-  filter(gene != "control") %>%
-  distinct() %>%
-  pull(gene)
-
 ## first do regressions for each gene, with all (control) cell lines pooled
-
-print(paste0("Running NB regressions on " , length(gene_names), " genes for all ", length(cell_line_names), " cell lines pooled"))
+print(paste0("Running NB regressions on " , length(gene_names_tkov1), " genes for all ", length(cell_line_names_tkov1), " cell lines pooled"))
 
 # NB loop across genes
-NBres[["TKOv1_pooled"]] = mclapply(gene_names, function(g){
+NBres[["TKOv1_pooled"]] = lapply(gene_names_tkov1, function(g){ #mc
   
   # build dataframe (for a given gene) for regression
   df = buildDF(g, eset_tkov1, conditions_tkov1, raw_counts_offset_tkov1, cLine="pooled", type_treatment="control")
@@ -636,22 +629,21 @@ NBres[["TKOv1_pooled"]] = mclapply(gene_names, function(g){
   # run NB regression on that gene
   y = fitModel(df)
   
-}, mc.cores = 30)
+}) #, mc.preschedule=FALSE, mc.cores = 8)
 
 # name elements by their analyzed gene's name
-names(NBres[["TKOv1_pooled"]]) = gene_names
+names(NBres[["TKOv1_pooled"]]) = gene_names_tkov1
 
 
 ## now do regressions for each gene, for each cell line separately
-
-print(paste0("Running NB regressions on " , length(gene_names), " genes for ", length(cell_line_names), " cell lines separately"))
+print(paste0("Running NB regressions on " , length(gene_names_tkov1), " genes for ", length(cell_line_names_tkov1), " cell lines separately"))
 
 # NB loop across cell lines and genes
-for (cLine in cell_line_names){
+for (cLine in cell_line_names_tkov1){
   
   print(paste0("Analyzing cell line ", cLine))
   
-  NBres_1_cell_line = mclapply(gene_names, function(g){
+  NBres_1_cell_line = lapply(gene_names_tkov1, function(g){ #mc
     
     # build dataframe (for a given gene) for regression
     df = buildDF(g, eset_tkov1, conditions_tkov1, raw_counts_offset_tkov1, cLine, type_treatment="control")
@@ -659,10 +651,10 @@ for (cLine in cell_line_names){
     # run NB regression on that gene
     y = fitModel(df)
     
-  }, mc.cores = 30)
+  }) #, mc.preschedule=FALSE, mc.cores = 8)
   
   # name elements by their analyzed gene's name
-  names(NBres_1_cell_line) = gene_names
+  names(NBres_1_cell_line) = gene_names_tkov1
   
   # append to full NBres
   NBres[[cLine]] = NBres_1_cell_line
@@ -670,14 +662,122 @@ for (cLine in cell_line_names){
 
 print("NB regressions finished!")
 
-## save processed data
-save(NBres, file = paste0(dataDir, "NBres.RData"))
-#load(file = paste0(dataDir, "NBres.RData"))
+## save processed data (13G)
+save(NBres, file = paste0(dataDir, "NBres/NBres.RData"),
+     compress = F) # the parameter compress=T means that the resulting file will use less space on your disk. However, if it is a really huge dataset, it could take longer to load it later because R first has to extract the file again. So, if you want to save space, then leave it as it is. If you want to save time, add a parameter compress = F
 
 
+#### parse NB results
 
-# #### parse NB results
+# load processed data
+readRDS(file = paste0(dataDir, "esets/eset_brunello.RData"))
+readRDS(file = paste0(dataDir, "esets/eset_tkov1.RData"))
+readRDS(file = paste0(dataDir, "NBres/NBres.RData"))
+
+## create table of genes (rows) for each library
+table_brunello = data.frame(matrix(ncol = length(cell_line_names_brunello) + 1,
+                                   nrow = length(gene_names_brunello))) %>%
+  `colnames<-`(c("Brunello_pooled", as.character(cell_line_names_brunello))) %>%
+  `rownames<-`(gene_names_brunello) %>%
+  rownames_to_column("gene") %>%
+  # gather cell lines, with a 3rd col for estimate of time_cat.Q
+  gather(key = "cell_line", value = "estimate", -gene) %>%
+  # create 4th for its pval
+  add_column(pvalue = NA)
+table_tkov1 = data.frame(matrix(ncol = length(cell_line_names_tkov1) + 1,
+                                nrow = length(gene_names_tkov1))) %>%
+  `colnames<-`(c("TKOv1_pooled", as.character(cell_line_names_tkov1))) %>%
+  `rownames<-`(gene_names_tkov1) %>%
+  rownames_to_column("gene") %>%
+  # gather cell lines, with a 3rd col for estimate of time_cat.Q
+  gather(key = "cell_line", value = "estimate", -gene) %>%
+  # create 4th for its pval
+  add_column(pvalue = NA)
+# rbind them
+table_fdr = rbind(table_brunello, table_tkov1)
+# gene-only version
+table_fdr %<>%
+  select(gene, estimate, pvalue) %>%
+  distinct() %>%
+  arrange(gene) %>%
+  add_column(cell_line = NA)
+
+# loop through nb list
+for (cLine in names(NBres)){
+  
+  NBres_tidy = NBres[[cLine]] %>%
+    # apply broom::tidy() to each gene from NBres[[cell_line]] -- it's like summary..
+    map(., ~tidy(.x)) %>%
+    # keeping the estimate and pval of time_cat.Q only
+    map(., ~filter(.x, term == "time_cat.Q")) %>%
+    map(., ~select(.x, -c(std.error, statistic)))
+  
+  # now merge estimates and pvals for all genes into a megatable
+  merge_genes = eat(NBres_tidy[[1]],
+               NBres_tidy[-1],
+               .by = "term") %>%
+    # the first dataset's variables remained unchanged, so append dataset name to them
+    rename_with(.fn = ~paste0(names(NBres_tidy)[1],
+                              "_estimate"),
+                .cols = all_of("estimate")) %>%
+    rename_with(.fn = ~paste0(names(NBres_tidy)[1],
+                              "_p.value"),
+                .cols = all_of("p.value")) %>%
+    # long format, by term
+    gather(key = "estimate.pval",
+           value = "value",
+           -term) %>%
+    select(-term) %>%
+    # split 'estimate.pval' into 'estimate.pval' and 'gene' columns
+    separate(estimate.pval,
+             c("gene",
+               "estimate.pval"),
+             sep = "\\_") %>%
+    # one column estimate, one column SE, another statistic, another p.value
+    pivot_wider(names_from = c(estimate.pval),
+                values_from = c(value)) %>%
+    # add cell line name
+    mutate(cell_line = cLine) %>%
+    rename("pvalue" = "p.value")
+  
+  # rbind to table_fdr
+  table_fdr %>% merge(merge_genes)
+}  
+    
+  
+  
+  
+#   # correct p-values (FDR)
+#   mutate(fdr = p.adjust(p.value,
+#                         method = "BH")) %>%
+#   # order and sort
+#   select(gene, condition, term, estimate, std.error, statistic, p.value, fdr) %>%
+#   arrange(fdr, p.value)
 # 
+# ## write table to file
+# write_tsv(allres,
+#           paste0(tabDir, "results.tsv"))
+
+
+# passing them to the 3rd and 4th cols in table
+# calculate fdr (qvalues)
+# add to them the sign of the estimate (concave or convex)
+# rm estimate and pval
+# pivot_wider, again rows genes and cols samples
+
+
+## gene hit ascertainment
+# for each sign, FDR<|0.05| in time_cat.Q
+# overlapping across many control cell lines
+
+
+## draw hit curves 
+# plot_model
+
+
+## GO set enrichment of gene hits can provide more insights
+
+
 # ## merge all genes results (i.e. the elements from NBres list) into megatable 'allres'
 # 
 # # apply broom::tidy() to each gene from NBres

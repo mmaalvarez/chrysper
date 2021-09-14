@@ -1,3 +1,4 @@
+- fix loop error
 - adding tko v1
 - big changes for non-linear gene essentiality across cell lines
 - README, TODO

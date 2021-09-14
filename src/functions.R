@@ -48,6 +48,7 @@ fitModel = function(df){
   
   formula = "counts ~ time_cat + offset(ln_sum_control)"
   
+  # it's necessary to wrap the regression within a tryCatch(), because otherwise the possible warning/error in glm.nb() aborts and exits the loop
                # first try negative binomial generalized linear model
   y = tryCatch(glm.nb(formula = formula, data = df),
                # if there is a failure to converge to theta, run a Poisson generalized linear model
