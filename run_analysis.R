@@ -13,8 +13,8 @@ library(ggplot2)
 library(broom)
 library(safejoin)
 # library(effects)          # plot interaction terms
-# library(sjmisc)           # for plot_model function
-# library(sjPlot)           # for plot_model function
+library(sjmisc)           # for plot_model function
+library(sjPlot)           # for plot_model function
 
 # resolve function conflicts
 library(conflicted)
@@ -306,9 +306,6 @@ sampleNames(eset_brunello) = eset_brunello$sample
 ## save processed data
 save(eset_brunello,
      file = paste0(dataDir, "esets/eset_brunello.RData"))
-# load it to save time
-#load(file = paste0(dataDir, "esets/eset_brunello.RData")) ; conditions = names(pData(eset_brunello))[! names(pData(eset_brunello)) %in% c("sample", "time")]
-
 
 
 
@@ -335,6 +332,11 @@ tkov1_library = vroom("/g/strcombio/fsupek_data/CRISPR/4_resources/crispr_librar
   select(sgRNA_id, sgRNA, gene, "sgRNA Target Sequence", EXON) %>%
   # sort
   arrange(gene, sgRNA)
+
+## for final FDR table, which genes overlap between libraries
+genes_overlap_libraries = merge(select(brunello_library, gene) %>% distinct(),
+                                select(tkov1_library, gene) %>% distinct()) %>%
+  pull(gene)
 
 
 # raw data's root path
@@ -520,16 +522,12 @@ tkov1_library_sorted = left_join(data.frame(sgRNA_id = grna_order),
 
 fData(eset_tkov1) = tkov1_library_sorted
 
-
 ## phenoData's 'sampleNames' section are just numbers -- replace with the actual sample names (SHOULD BE IN THE SAME ORDER)
 sampleNames(eset_tkov1) = eset_tkov1$sample
-
 
 ## save processed data
 save(eset_tkov1,
      file = paste0(dataDir, "esets/eset_tkov1.RData"))
-# load it to save time
-#load(file = paste0(dataDir, "esets/eset_tkov1.RData")) ; conditions = names(pData(eset_tkov1))[! names(pData(eset_tkov1)) %in% c("sample", "time")]
 
 
 
@@ -538,6 +536,10 @@ save(eset_tkov1,
 
 
 #### Prepare NB regressions
+
+# load eset data
+load(file = paste0(dataDir, "esets/eset_brunello.RData")) ; conditions_brunello = names(pData(eset_brunello))[! names(pData(eset_brunello)) %in% c("sample", "time")]
+load(file = paste0(dataDir, "esets/eset_tkov1.RData")) ; conditions_tkov1 = names(pData(eset_tkov1))[! names(pData(eset_tkov1)) %in% c("sample", "time")]
 
 # cell line and gene names per library
 cell_line_names_brunello = pData(eset_brunello) %>%
@@ -611,6 +613,9 @@ for (cLine in cell_line_names_brunello){
   
   # append to full NBres
   NBres[[cLine]] = NBres_1_cell_line
+  
+  # free memory
+  rm(NBres_1_cell_line); gc()
 }
 
 
@@ -658,51 +663,33 @@ for (cLine in cell_line_names_tkov1){
   
   # append to full NBres
   NBres[[cLine]] = NBres_1_cell_line
+  
+  # free memory
+  rm(NBres_1_cell_line); gc()
 }
 
 print("NB regressions finished!")
 
-## save processed data (13G)
-save(NBres, file = paste0(dataDir, "NBres/NBres.RData"),
-     compress = F) # the parameter compress=T means that the resulting file will use less space on your disk. However, if it is a really huge dataset, it could take longer to load it later because R first has to extract the file again. So, if you want to save space, then leave it as it is. If you want to save time, add a parameter compress = F
+# ## save processed data
+# save(NBres, file = paste0(dataDir, "NBres/NBres.RData"),
+#      compress = F) # the parameter compress=T means that the resulting file will use less space on your disk. However, if it is a really huge dataset, it could take longer to load it later because R first has to extract the file again. So, if you want to save space, then leave it as it is. If you want to save time, add a parameter compress = F
+
+# NBres size
+# 13G in disk (dataDir/NBres/)
+# 25G in memory (workspace)
+
+# free memory up
+rm(list = ls(pattern="grna|library|sampleinfo|eset|raw|gene|line|table"))
+gc()
+
 
 
 #### parse NB results
 
 # load processed data
-readRDS(file = paste0(dataDir, "esets/eset_brunello.RData"))
-readRDS(file = paste0(dataDir, "esets/eset_tkov1.RData"))
-readRDS(file = paste0(dataDir, "NBres/NBres.RData"))
+load(file = paste0(dataDir, "NBres/NBres.RData"))
 
-## create table of genes (rows) for each library
-table_brunello = data.frame(matrix(ncol = length(cell_line_names_brunello) + 1,
-                                   nrow = length(gene_names_brunello))) %>%
-  `colnames<-`(c("Brunello_pooled", as.character(cell_line_names_brunello))) %>%
-  `rownames<-`(gene_names_brunello) %>%
-  rownames_to_column("gene") %>%
-  # gather cell lines, with a 3rd col for estimate of time_cat.Q
-  gather(key = "cell_line", value = "estimate", -gene) %>%
-  # create 4th for its pval
-  add_column(pvalue = NA)
-table_tkov1 = data.frame(matrix(ncol = length(cell_line_names_tkov1) + 1,
-                                nrow = length(gene_names_tkov1))) %>%
-  `colnames<-`(c("TKOv1_pooled", as.character(cell_line_names_tkov1))) %>%
-  `rownames<-`(gene_names_tkov1) %>%
-  rownames_to_column("gene") %>%
-  # gather cell lines, with a 3rd col for estimate of time_cat.Q
-  gather(key = "cell_line", value = "estimate", -gene) %>%
-  # create 4th for its pval
-  add_column(pvalue = NA)
-# rbind them
-table_fdr = rbind(table_brunello, table_tkov1)
-# gene-only version
-table_fdr %<>%
-  select(gene, estimate, pvalue) %>%
-  distinct() %>%
-  arrange(gene) %>%
-  add_column(cell_line = NA)
-
-# loop through nb list
+## loop through NB list
 for (cLine in names(NBres)){
   
   NBres_tidy = NBres[[cLine]] %>%
@@ -710,170 +697,190 @@ for (cLine in names(NBres)){
     map(., ~tidy(.x)) %>%
     # keeping the estimate and pval of time_cat.Q only
     map(., ~filter(.x, term == "time_cat.Q")) %>%
-    map(., ~select(.x, -c(std.error, statistic)))
-  
-  # now merge estimates and pvals for all genes into a megatable
-  merge_genes = eat(NBres_tidy[[1]],
-               NBres_tidy[-1],
-               .by = "term") %>%
-    # the first dataset's variables remained unchanged, so append dataset name to them
-    rename_with(.fn = ~paste0(names(NBres_tidy)[1],
-                              "_estimate"),
-                .cols = all_of("estimate")) %>%
-    rename_with(.fn = ~paste0(names(NBres_tidy)[1],
-                              "_p.value"),
-                .cols = all_of("p.value")) %>%
-    # long format, by term
-    gather(key = "estimate.pval",
-           value = "value",
-           -term) %>%
-    select(-term) %>%
-    # split 'estimate.pval' into 'estimate.pval' and 'gene' columns
-    separate(estimate.pval,
-             c("gene",
-               "estimate.pval"),
-             sep = "\\_") %>%
-    # one column estimate, one column SE, another statistic, another p.value
-    pivot_wider(names_from = c(estimate.pval),
-                values_from = c(value)) %>%
+    map(., ~select(.x, -c(term, std.error, statistic))) %>%
+    # add gene name
+    map2_df(., names(.), ~mutate(.x, gene = .y)) %>%
+    relocate(gene, .before="estimate") %>%
     # add cell line name
     mutate(cell_line = cLine) %>%
-    rename("pvalue" = "p.value")
+    relocate(cell_line, .after="gene")
   
-  # rbind to table_fdr
-  table_fdr %>% merge(merge_genes)
-}  
-    
-  
-  
-  
-#   # correct p-values (FDR)
-#   mutate(fdr = p.adjust(p.value,
-#                         method = "BH")) %>%
-#   # order and sort
-#   select(gene, condition, term, estimate, std.error, statistic, p.value, fdr) %>%
-#   arrange(fdr, p.value)
-# 
-# ## write table to file
-# write_tsv(allres,
-#           paste0(tabDir, "results.tsv"))
+  # write to intermediate tables
+  write_tsv(NBres_tidy, paste0(dataDir, "estimates_pvalues/estimates_pvalues_", cLine, ".tsv" ))
+
+  # free memory
+  rm(NBres_tidy); gc()
+}
+
+# free memory
+rm(NBres); gc()
+
+## recover tables for each cell line and rbind them
+list_tables = lapply(Sys.glob(paste0(dataDir, "estimates_pvalues/estimates_pvalues_*")),
+                                     vroom)
+table_fdr = eat(list_tables[[1]],
+                list_tables[-1],
+                .mode = "full") %>%
+  # correct p.values (FDR)
+  mutate(fdr = qvalue::qvalue(p.value)$qvalues, #p.adjust(p.value, method = "BH",
+         # mark which genes do not overlap between Brunello and TKOv1)
+         library_overlap = ifelse(gene %in% genes_overlap_libraries,
+                                  "Library overlap",
+                                  "No library overlap"),
+         # count trend shape, for faceting
+         shape = ifelse(estimate>0,
+                               "convex",
+                               "concave"),
+         shape = factor(shape, ordered = T, levels = c("convex", "concave"))) %>%
+  # sort based on gene
+  arrange(gene)
+
+# free memory
+rm(list_tables); gc()
+
+# write table to file
+write_tsv(table_fdr, paste0(tabDir, "table_fdr.tsv"))
 
 
-# passing them to the 3rd and 4th cols in table
-# calculate fdr (qvalues)
-# add to them the sign of the estimate (concave or convex)
-# rm estimate and pval
-# pivot_wider, again rows genes and cols samples
+
+## gene hit ascertainment (FDR<..., overlapping across many control cell lines)
+
+# load table_fdr
+table_fdr = vroom(paste0(tabDir, "table_fdr.tsv"))
+
+# threshold is based on the mean(-log10(fdr)) across cell lines, per gene AND SHAPE
+minlog10fdr_thr = 0.60206 # fdr = 25% (-log10(0.25)=0.60206)
+
+# point size = mean(-log10(fdr)) across cell lines, per gene AND SHAPE
+minlog10fdr_mean = table_fdr %>%
+  select(gene, shape, fdr) %>%
+  group_by(gene, shape) %>%
+  summarize(fdr_mean = mean(fdr),
+            .groups = "keep") %>%
+  mutate(minlog10fdr_mean = -log10(fdr_mean)) %>%
+  select(-fdr_mean)
+table_fdr %<>% merge(minlog10fdr_mean)
+
+# plot
+manhattan = ggplot(data = table_fdr,
+       aes(x = gene,
+           # -log scale
+           y = -log10(fdr))) +
+  scale_y_continuous(breaks = c(seq(0, 300, 25)),
+                     expand = c(0, 0)) +
+  geom_point(alpha = 0.8,
+             aes(col = cell_line,
+                 shape = library_overlap,
+                 size = minlog10fdr_mean)) +
+  scale_shape_manual(values = c(16, 18)) +
+  geom_text_repel(data = table_fdr %>% #filter(label_this == "label_this"),
+                    filter(minlog10fdr_mean >= minlog10fdr_thr &
+                             -log10(fdr) >= minlog10fdr_thr),
+                  aes(label = gene),
+                  nudge_y = 150,
+                  force = 2,
+                  size = 2,
+                  min.segment.length = 0.1,
+                  segment.size = 0.1,
+                  show.legend = F) +
+  facet_wrap(facets = ~shape,
+             scales = "free") +
+  xlab("gene") +
+  ylab("-log10(q-value)") +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.key.size = unit(0.5, 'cm'), #change legend key size
+        legend.key.height = unit(0.5, 'cm'), #change legend key height
+        legend.key.width = unit(0.5,'cm'), #change legend key width
+        legend.title = element_text(size=5), #change legend title font size
+        legend.text = element_text(size=5)) #change legend text font size
+ggsave(path = figDir, plot = manhattan,
+       filename = "manhattan.jpg",
+       device = "jpg", width = 10, height = 5.6, dpi = 600)
+ggsave(path = figDir, plot = manhattan,
+       filename = "manhattan.pdf",
+       device = "pdf", width = 10, height = 5.6, dpi = 600)
+
+manhattan_clean = ggplot(data = table_fdr %>%
+                     # plot only genes~cLine with FDR<thr
+                     filter(minlog10fdr_mean >= minlog10fdr_thr),
+                   aes(x = gene,
+                       # -log scale
+                       y = -log10(fdr))) +
+  scale_y_continuous(breaks = c(seq(0, 300, 25)),
+                     expand = c(0, 0)) +
+  geom_point(alpha = 0.8,
+             aes(col = cell_line,
+                 shape = library_overlap,
+                 size = minlog10fdr_mean)) +
+  scale_shape_manual(values = c(16, 18)) +
+  geom_text_repel(data = table_fdr %>% #filter(label_this == "label_this"),
+                    filter(minlog10fdr_mean >= minlog10fdr_thr &
+                             -log10(fdr) >= minlog10fdr_thr),
+                  aes(label = gene),
+                  nudge_y = 50,
+                  force = 2,
+                  size = 2,
+                  min.segment.length = 0.1,
+                  segment.size = 0.1,
+                  show.legend = F) +
+  facet_wrap(facets = ~shape,
+             scales = "free") +
+  xlab("gene") +
+  ylab("-log10(q-value)") +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.key.size = unit(0.5, 'cm'), #change legend key size
+        legend.key.height = unit(0.5, 'cm'), #change legend key height
+        legend.key.width = unit(0.5,'cm'), #change legend key width
+        legend.title = element_text(size=5), #change legend title font size
+        legend.text = element_text(size=5)) #change legend text font size
+ggsave(path = figDir, plot = manhattan_clean,
+       filename = "manhattan_clean.jpg",
+       device = "jpg", width = 10, height = 5.6, dpi = 600)
+ggsave(path = figDir, plot = manhattan_clean,
+       filename = "manhattan_clean.pdf",
+       device = "pdf", width = 10, height = 5.6, dpi = 600)
 
 
-## gene hit ascertainment
-# for each sign, FDR<|0.05| in time_cat.Q
-# overlapping across many control cell lines
+## draw hit curves with plot_model
+
+load(file = paste0(dataDir, "NBres/NBres.RData"))
+
+# the hits are the gene~cLine~shape shown in manhattan_clean
+table_fdr$shape = factor(table_fdr$shape, ordered = T, levels = c("convex", "concave"))
+hits = table_fdr %>%
+  filter(minlog10fdr_mean >= minlog10fdr_thr &
+           -log10(fdr) >= minlog10fdr_thr) %>%
+  select(gene, cell_line, shape, library_overlap) %>%
+  arrange(shape, gene, cell_line)
+
+list_plots = list()
+for(i in seq(1, length(hits$gene))){
+  data_model = NBres[[hits$cell_line[i]]][[hits$gene[i]]]
+  # new model col names
+  names(data_model$model) = c('counts', 'time_cat', 'ln_sum_control')
+  p_model = plot_model(data_model,
+                       type = "pred",
+                       terms = c('time_cat'),
+                       value.offset = 'ln_sum_control') +
+    xlab("") +
+    geom_line() +
+    ggtitle(paste0(hits$gene[i], " (", hits$library_overlap[i], ") - ", hits$cell_line[i], " - ", hits$shape[i] , " shape")) +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5))
+  list_plots[[paste0(hits$gene[i], "_", hits$cell_line[i], "_", hits$shape[i])]] = p_model
+}
+#show(list_plots[["WDR52_RPE1_concave"]])
+
+cowplot(list_plots)
 
 
-## draw hit curves 
-# plot_model
+rm(NBres); gc()
+
 
 
 ## GO set enrichment of gene hits can provide more insights
 
-
-# ## merge all genes results (i.e. the elements from NBres list) into megatable 'allres'
-# 
-# # apply broom::tidy() to each gene from NBres
-# NBres_tidy = NBres %>%
-#   map(., ~tidy(.x$model))
-# 
-# # now merge NB results for all genes into a megatable (takes time)
-# allres = eat(NBres_tidy[[1]],
-#              NBres_tidy[-1],
-#              .by = "term") %>%
-#   # the first dataset's variables remained unchanged, so append dataset name to them
-#   rename_with(.fn = ~paste0(names(NBres_tidy)[1],
-#                             "_estimate"),
-#               .cols = all_of("estimate")) %>%
-#   rename_with(.fn = ~paste0(names(NBres_tidy)[1],
-#                             "_std.error"),
-#               .cols = all_of("std.error")) %>%
-#   rename_with(.fn = ~paste0(names(NBres_tidy)[1],
-#                             "_statistic"),
-#               .cols = all_of("statistic")) %>%
-#   rename_with(.fn = ~paste0(names(NBres_tidy)[1],
-#                             "_p.value"),
-#               .cols = all_of("p.value")) %>%
-#   # long format, by term
-#   gather(key = "estimate.SE.stat.pval",
-#          value = "value",
-#          -term) %>%
-#   # split 'estimate.SE.stat.pval' into 'estimate.SE.stat.pval' and 'gene' columns
-#   separate(estimate.SE.stat.pval,
-#            c("gene",
-#              "estimate.SE.stat.pval"),
-#            sep = "\\_") %>%
-#   # one column estimate, one column SE, another statistic, another p.value
-#   pivot_wider(names_from = c(estimate.SE.stat.pval),
-#               values_from = c(value)) %>%
-#   # remove NA rows
-#   na.omit() %>%
-#   # remove intercepts
-#   filter(term != "(Intercept)") %>%
-#   # add column with the condition tested (e.g. treatment_recatDOX_IC25-vs-control.. is "treatment") OR if it is interaction (contains ":")
-#   mutate(condition = ifelse(str_detect(term, "\\:"),
-#                             yes = "interaction",
-#                             no = gsub("_.*",
-#                                       "",
-#                                       term))) %>%
-#   # correct p-values (FDR)
-#   mutate(fdr = p.adjust(p.value,
-#                         method = "BH")) %>%
-#   # order and sort
-#   select(gene, condition, term, estimate, std.error, statistic, p.value, fdr) %>%
-#   arrange(fdr, p.value)
-# 
-# ## write table to file
-# write_tsv(allres,
-#           paste0(tabDir, "results.tsv"))
-# 
-# 
-# 
-# #### detect top gene hits
-# 
-# # to detect genes with just negative slope for treated samples
-# hits = data.frame(matrix(nrow=0,
-#                          ncol=length(colnames(allres))))
-# names(hits) = colnames(allres)
-# hits = as_tibble(hits)
-# for (g in unique(allres$gene)){
-#   treatment_L = allres %>% filter(gene == g & term == 'treatment_recat.L')
-#   time_mid_0 = allres %>% filter(gene == g & term == 'time_catmiddle-vs-zero')
-#   time_late_mid = allres %>% filter(gene == g & term == 'time_catlate-vs-middle')
-#   interaction_mid_0 = allres %>% filter(gene == g & term == 'time_catmiddle-vs-zero:treatment_recat.L')
-#   interaction_late_mid = allres %>% filter(gene == g & term == 'time_catlate-vs-middle:treatment_recat.L')
-#   ifelse(interaction_mid_0$fdr < 0.05 ||
-#            interaction_late_mid$fdr < 0.05,
-#          yes = (hits = rbind(hits, interaction_mid_0,
-#                              interaction_late_mid,
-#                              treatment_L,
-#                              time_late_mid,
-#                              time_mid_0)),
-#          no = (hits = hits))
-# }
-# 
-# 
-# ## plot hits
-# 
-# for(gene in unique(hits$gene)){
-#   data_model = NBres[[gene]]$model
-#   new_model_names = c('counts', 'time_cat', 'treatment_recat', 'ln_sum_control')
-#   names(data_model$model) = new_model_names
-#   p_model = plot_model(data_model, 
-#                        type = "pred", 
-#                        terms = c('time_cat', 'treatment_recat'),
-#                        value.offset = 'ln_sum_control') +
-#     geom_line() +
-#     ggtitle(gene) +
-#     theme_minimal()
-#   show(p_model)
-#   ggsave(path = figDir, filename = paste0(gene, "_counts_vs_time.jpg"),
-#           plot = p_model, device = "jpg", width = 10, height = 5.6, dpi = 300)  
-# }

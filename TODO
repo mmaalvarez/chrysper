@@ -1,22 +1,3 @@
-create table of genes (rows) and columns (samples) for each library
-  gather each
-  rbind
-  then create a 3rd col for estimate of time_cat.Q, and a 4th for its pval.
-
-loop through nb list, doing the summary(y) and keeping the estimate and pval of time_cat.Q only, passing them to the 3rd and 4th cols in table
-
-calculate fdr (qvalues). add to them the sign of the estimate (concave or convex). rm estimate and pval. pivot_wider, again rows genes and cols samples.
-
-
-gene hit ascertainment
-----------------------
-
-FILTER: for each sign, FDR<|0.05| in time_cat.Q, overlapping across many control cell lines
-
-
-downstream
-----------
-
 Draw hit curves (plot_model)
 
 GO set enrichment of gene hits can provide more insights
