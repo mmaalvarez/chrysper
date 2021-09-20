@@ -847,7 +847,7 @@ ggsave(path = figDir, plot = manhattan,
        device = "jpg", width = 10, height = 5.6, dpi = 600)
 
 
-### sort genes based on D@ or CERES
+### sort genes based on D2 or CERES
 ## gene aliases from https://www.genenames.org/download/archive/
 hgnc = vroom(url("http://ftp.ebi.ac.uk/pub/databases/genenames/hgnc/tsv/hgnc_complete_set.txt")) %>%
   select(symbol, alias_symbol, prev_symbol) %>%
@@ -866,6 +866,21 @@ hgnc_gene_col2 = rename(hgnc, "gene" = "alias_symbol",
 hgnc_gene_col3 = rename(hgnc, "gene" = "prev_symbol",
                               "alias1" = "symbol",
                               "alias2" = "alias_symbol")
+
+### table name correspondences gene hits
+hit_name_correspondences = hits %>%
+  select(gene) %>%
+  distinct() %>%
+  merge(hgnc_gene_col1, all = T) %>%
+  merge(hgnc_gene_col2, all = T) %>%
+  merge(hgnc_gene_col3, all = T) %>%
+  merge(select(hits, gene)) %>%
+  distinct() %>%
+  filter(!is.na(alias1) |
+           !is.na(alias2))
+write_tsv(hit_name_correspondences,
+          paste0(tabDir, "hit_name_correspondences.tsv"))
+
 # add aliases to table_fdr genes
 table_fdr_genenames = table_fdr %>%
   select(gene) %>%
@@ -1099,13 +1114,6 @@ ggsave(path = figDir, plot = manhattan_with_ceres,
 
 
 
-### table name correspondences gene hits
-gene_name_correspondences = table_fdr_genenames %>%
-  filter(gene %in% unique(hits$gene)) %>%
-  select(gene) %>%
-  distinct()
-
-
 ### draw hit curves with plot_model
 
 load(file = paste0(dataDir, "NBres/NBres.RData"))
@@ -1165,15 +1173,16 @@ for(i in seq(1, length(hits$gene))){
     ylab("") +
     ggtitle(cell_line_name) +
     #ggtitle(paste0(gene_name, " (", hits$library_overlap[i], ") - ", cell_line_name, " - ", shape_type , " shape")) +
-    theme_classic() #+ theme(plot.title = element_text(hjust = 0.5))
+    theme_classic() +
+    theme(axis.text.x = element_blank())
 
   list_plots[[shape_type]][[gene_name]][[cell_line_name]] = p_model
 }
 
 ## plot together reg. plots
-plot_grid(labels = c("convex", "concave"), vjust = 1, hjust = -6, ncol = 2,
+plots_hit_curves = plot_grid(labels = c("convex", "concave"), vjust = 1, hjust = -6, ncol = 2,
           # convex ones
-          plot_grid(nrow = 2, # CHANGE THIS TO MATCH N GENES
+          plot_grid(nrow = length(names(list_plots$convex)), # MATCH N GENES
                     plot_grid(labels = c("C12orf23"), nrow = 1, vjust = 3, hjust = -2,
                               plot_grid(#labels = c("RPE1"),
                                         list_plots$convex$C12orf23$RPE1)),
@@ -1183,10 +1192,37 @@ plot_grid(labels = c("convex", "concave"), vjust = 1, hjust = -6, ncol = 2,
                               plot_grid(#labels = c("RPE1"),
                                         list_plots$convex$C5orf55$RPE1),
                               plot_grid(#labels = c("SUM149PT"),
-                                        list_plots$convex$C5orf55$SUM149PT))),
-                    ## ADD MORE GENES-CLINES...
+                                        list_plots$convex$C5orf55$SUM149PT)),
+                    plot_grid(labels = c("DNLZ"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$DNLZ$K562)),
+                    plot_grid(labels = c("MARS2"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$MARS2$K562)),
+                    plot_grid(labels = c("MDS2"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$MDS2$RPE1)),
+                    plot_grid(labels = c("MRPL15"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$MRPL15$K562)),
+                    plot_grid(labels = c("MRPS27"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$MRPS27$K562)),
+                    plot_grid(labels = c("PAF1"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$PAF1$Brunello_pooled),
+                              plot_grid(list_plots$convex$PAF1$A549_TP53KO_HMCESwt),
+                              plot_grid(list_plots$convex$PAF1$A549_TP53wt_HMCESwt),
+                              plot_grid(list_plots$convex$PAF1$LXF289_TP53mut_HMCESwt),
+                              plot_grid(list_plots$convex$PAF1$HT29_ARID1Awt_MSH6KO),
+                              plot_grid(list_plots$convex$PAF1$HT29_ARID1Awt_MSH6wt),
+                              plot_grid(list_plots$convex$PAF1$SW480_ARID1AKO_MSH6wt),
+                              plot_grid(list_plots$convex$PAF1$SW480_ARID1Awt_MSH6wt),
+                              plot_grid(list_plots$convex$PAF1$SW620_ARID1AKO_MSH6wt),
+                              plot_grid(list_plots$convex$PAF1$SW620_ARID1Awt_MSH6KO),
+                              plot_grid(list_plots$convex$PAF1$SW620_ARID1Awt_MSH6wt)),
+                    plot_grid(labels = c("PGS1"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$PGS1$K562)),
+                    plot_grid(labels = c("PMVK"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$PMVK$K562)),
+                    plot_grid(labels = c("TUFM"), nrow = 1, vjust = 3, hjust = -2,
+                              plot_grid(list_plots$convex$TUFM$K562))),
           # concave ones
-          plot_grid(nrow = 1, # CHANGE THIS TO MATCH N GENES
+          plot_grid(nrow = length(names(list_plots$concave)), # MATCH N GENES
                     plot_grid(labels = c("C11orf93"), nrow = 1, vjust = 3, hjust = -1,
                               plot_grid(#labels = c("TKOv1_pooled"),
                                         list_plots$concave$C11orf93$TKOv1_pooled),
@@ -1195,24 +1231,50 @@ plot_grid(labels = c("convex", "concave"), vjust = 1, hjust = -6, ncol = 2,
                               plot_grid(#labels = c("HeLa"),
                                         list_plots$concave$C11orf93$HeLa),
                               plot_grid(#labels = c("SUM149PT"),
-                                        list_plots$concave$C11orf93$SUM149PT))))
-                    ## ADD MORE GENES-CLINES...
-
-# # create common x and y labels
-# y.grob <- textGrob("mean norm. sgRNA counts", 
-#                    gp=gpar(fontsize=8), rot=90)
-# x.grob <- textGrob("bp distance of sgRNA cut from gene start", 
-#                    gp=gpar(fontsize=8))
-# # add to plot
-# plotf = arrangeGrob(p, left = y.grob, bottom = x.grob)
-# #grid.draw(p)
-# ggsave(plotf,
-#        filename = "bp_from_5prime.jpg",
-#        device = "jpg",
-#        dpi = 600,
-#        width = 11,
-#        height = 6,
-#        bg = "white")
+                                        list_plots$concave$C11orf93$SUM149PT)),
+                    plot_grid(labels = c("CBWD3"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$CBWD3$A549_TP53KO_HMCESwt)),
+                    plot_grid(labels = c("DUT"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$DUT$HeLa)),
+                    plot_grid(labels = c("GPR125"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$GPR125$SUM149PT)),
+                    plot_grid(labels = c("HNRNPA1"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$HNRNPA1$HT29_ARID1Awt_MSH6KO)),
+                    plot_grid(labels = c("MDS2"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$MDS2$TKOv1_pooled),
+                              plot_grid(list_plots$concave$MDS2$HeLa),
+                              plot_grid(list_plots$concave$MDS2$SUM149PT)),
+                    plot_grid(labels = c("NEFH"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$NEFH$TKOv1_pooled),
+                              plot_grid(list_plots$concave$NEFH$RPE1),
+                              plot_grid(list_plots$concave$NEFH$SUM149PT)),
+                    plot_grid(labels = c("TEKT4"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$TEKT4$SUM149PT)),
+                    plot_grid(labels = c("TIMM44"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$TIMM44$A549_TP53KO_HMCESwt),
+                              plot_grid(list_plots$concave$TIMM44$A549_TP53wt_HMCESwt)),
+                    plot_grid(labels = c("TSC22D4"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$TSC22D4$TKOv1_pooled),
+                              plot_grid(list_plots$concave$TSC22D4$RPE1),
+                              plot_grid(list_plots$concave$TSC22D4$HeLa)),
+                    plot_grid(labels = c("VOPP1"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$VOPP1$SUM149PT)),
+                    plot_grid(labels = c("WDR52"), nrow = 1, vjust = 3, hjust = -1,
+                              plot_grid(list_plots$concave$WDR52$RPE1))))
+# create common x and y labels
+y.grob <- textGrob("predicted sgRNA counts",
+                   gp=gpar(fontsize=8), rot=90)
+x.grob <- textGrob("time 0 - mid - late",
+                   gp=gpar(fontsize=8))
+# add to plot
+plotf = arrangeGrob(plots_hit_curves, left = y.grob, bottom = x.grob)
+ggsave(plotf,
+       filename = paste0(figDir, "plots_hit_curves.jpg"),
+       device = "jpg",
+       dpi = 600,
+       width = 11,
+       height = 6,
+       bg = "white")
 
 
 

@@ -1,18 +1,3 @@
-Correct the moffat mess
-	repeat NB loop for
-		TKOv1_pooled
-		RPE1 (now only Durocher's)
-	load NBres
-	remove old TKOv1_pooled and RPE1, and replace them with the new ones
-		save NBres
-	create the 2 tables of estimate-pval for TKOv1_pooles and RPE1
-		save them
-	load all tables and recreate table_fdr
-		save it
-	repeat manhattans
-		maybe "fuse" them, add outline highlighting the labelled ones, so not 2 plots are needed
-		maybe an extra manhattan only accounting for the brunello_pooled and tkov1_pooled
+Improve gen hit ascertainment
 
-Draw hit curves (plot_model)
-
-GO set enrichment of gene hits can provide more insights
+Build Nextflow pipeline

@@ -3,7 +3,7 @@
 Generalized Linear Model (family Negative Binomial)
 
 Regression: 
-`geneKO read counts ~ time_cat + control variables + offset + ε`
+`geneKO read counts ~ time + offset`
 
 
 MAIN INTEREST
@@ -13,11 +13,11 @@ Detect non-linear time trends for gene essentiality: this differs from classic g
 
 This uses untreated samples from each cell line separately, and finds gene-KOs with significant non-linearity for `counts ~ time + offset`. Currently 'time' is categorized into t0, t-mid, and t-late, with the default orthogonal polynomial contrasts (linear and quadratic)
 
-	FILTER1: FDR<0.05 in time_cat.Q (quadratic)
+	FILTER1: FDR<0.25 in time_cat.Q (quadratic)
 
-	FILTER2: hit overlap across control cell lines
+	FILTER2: hit overlap across control cell lines (mean FDR <0.25)
 
-	FILTER3: draw hit curves (plot_model) to check that they match across cell lines
+	FILTER3: draw predicted counts ~ time curves of gene hits to check that they match across cell lines
 
 GO set enrichment of gene hits can provide more insights
 
