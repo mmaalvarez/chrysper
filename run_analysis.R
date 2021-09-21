@@ -14,9 +14,10 @@ library(safejoin)
 library(ggplot2)
 library(ggnewscale)
 library(ggeffects)        # for ggpredict()
-library(cowplot)
-library(grid)             # for cowplot stuff
-library(gridExtra)        # for cowplot stuff
+# library(cowplot)
+# library(grid)             # for cowplot stuff
+# library(gridExtra)        # for cowplot stuff
+library(patchwork)
 
 # resolve function conflicts
 library(conflicted)
@@ -648,9 +649,9 @@ for (cLine in cell_line_names_tkov1){
 
 print("NB regressions finished!")
 
-# ## save processed data
-# save(NBres, file = paste0(dataDir, "NBres/NBres.RData"),
-#      compress = F) # the parameter compress=T means that the resulting file will use less space on your disk. However, if it is a really huge dataset, it could take longer to load it later because R first has to extract the file again. So, if you want to save space, then leave it as it is. If you want to save time, add a parameter compress = F
+## save processed data
+#save(NBres, file = paste0(dataDir, "NBres/NBres.RData"),
+#     compress = F) # the parameter compress=T means that the resulting file will use less space on your disk. However, if it is a really huge dataset, it could take longer to load it later because R first has to extract the file again. So, if you want to save space, then leave it as it is. If you want to save time, add a parameter compress = F
 
 # NBres size
 # 12G in disk (dataDir/NBres/)
@@ -1127,6 +1128,8 @@ for(i in seq(1, length(hits$gene))){
 
 rm(NBres); gc()
 
+save(NBres_hits, file = paste0(dataDir, "NBres/NBres_hits.RData"), compress = F)
+load(file = paste0(dataDir, "NBres/NBres_hits.RData"))
 
 ## create placeholders to later store hit shape-gene-cell_line reg. plots
 list_plots = list()
@@ -1171,103 +1174,20 @@ for(i in seq(1, length(hits$gene))){
     geom_line() +
     xlab("") +
     ylab("") +
-    ggtitle(cell_line_name) +
-    #ggtitle(paste0(gene_name, " (", hits$library_overlap[i], ") - ", cell_line_name, " - ", shape_type , " shape")) +
+    #ylab("Predicted counts") +
+    #ggtitle(cell_line_name) +
+    ggtitle(paste0(gene_name, " (", hits$library_overlap[i], ") - ", cell_line_name, " - ", shape_type , " shape")) +
     theme_classic() +
-    theme(axis.text.x = element_blank())
+    theme(axis.text.x = element_blank(),
+          axis.text.y = element_text(size = 6),
+          plot.title = element_text(size = 6))
 
   list_plots[[shape_type]][[gene_name]][[cell_line_name]] = p_model
 }
 
-## plot together reg. plots
-plots_hit_curves = plot_grid(labels = c("convex", "concave"), vjust = 1, hjust = -6, ncol = 2,
-          # convex ones
-          plot_grid(nrow = length(names(list_plots$convex)), # MATCH N GENES
-                    plot_grid(labels = c("C12orf23"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(#labels = c("RPE1"),
-                                        list_plots$convex$C12orf23$RPE1)),
-                    plot_grid(labels = c("C5orf55"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(#labels = c("TKOv1_pooled"),
-                                        list_plots$convex$C5orf55$TKOv1_pooled),
-                              plot_grid(#labels = c("RPE1"),
-                                        list_plots$convex$C5orf55$RPE1),
-                              plot_grid(#labels = c("SUM149PT"),
-                                        list_plots$convex$C5orf55$SUM149PT)),
-                    plot_grid(labels = c("DNLZ"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$DNLZ$K562)),
-                    plot_grid(labels = c("MARS2"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$MARS2$K562)),
-                    plot_grid(labels = c("MDS2"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$MDS2$RPE1)),
-                    plot_grid(labels = c("MRPL15"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$MRPL15$K562)),
-                    plot_grid(labels = c("MRPS27"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$MRPS27$K562)),
-                    plot_grid(labels = c("PAF1"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$PAF1$Brunello_pooled),
-                              plot_grid(list_plots$convex$PAF1$A549_TP53KO_HMCESwt),
-                              plot_grid(list_plots$convex$PAF1$A549_TP53wt_HMCESwt),
-                              plot_grid(list_plots$convex$PAF1$LXF289_TP53mut_HMCESwt),
-                              plot_grid(list_plots$convex$PAF1$HT29_ARID1Awt_MSH6KO),
-                              plot_grid(list_plots$convex$PAF1$HT29_ARID1Awt_MSH6wt),
-                              plot_grid(list_plots$convex$PAF1$SW480_ARID1AKO_MSH6wt),
-                              plot_grid(list_plots$convex$PAF1$SW480_ARID1Awt_MSH6wt),
-                              plot_grid(list_plots$convex$PAF1$SW620_ARID1AKO_MSH6wt),
-                              plot_grid(list_plots$convex$PAF1$SW620_ARID1Awt_MSH6KO),
-                              plot_grid(list_plots$convex$PAF1$SW620_ARID1Awt_MSH6wt)),
-                    plot_grid(labels = c("PGS1"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$PGS1$K562)),
-                    plot_grid(labels = c("PMVK"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$PMVK$K562)),
-                    plot_grid(labels = c("TUFM"), nrow = 1, vjust = 3, hjust = -2,
-                              plot_grid(list_plots$convex$TUFM$K562))),
-          # concave ones
-          plot_grid(nrow = length(names(list_plots$concave)), # MATCH N GENES
-                    plot_grid(labels = c("C11orf93"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(#labels = c("TKOv1_pooled"),
-                                        list_plots$concave$C11orf93$TKOv1_pooled),
-                              plot_grid(#labels = c("RPE1"),
-                                        list_plots$concave$C11orf93$RPE1),
-                              plot_grid(#labels = c("HeLa"),
-                                        list_plots$concave$C11orf93$HeLa),
-                              plot_grid(#labels = c("SUM149PT"),
-                                        list_plots$concave$C11orf93$SUM149PT)),
-                    plot_grid(labels = c("CBWD3"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$CBWD3$A549_TP53KO_HMCESwt)),
-                    plot_grid(labels = c("DUT"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$DUT$HeLa)),
-                    plot_grid(labels = c("GPR125"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$GPR125$SUM149PT)),
-                    plot_grid(labels = c("HNRNPA1"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$HNRNPA1$HT29_ARID1Awt_MSH6KO)),
-                    plot_grid(labels = c("MDS2"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$MDS2$TKOv1_pooled),
-                              plot_grid(list_plots$concave$MDS2$HeLa),
-                              plot_grid(list_plots$concave$MDS2$SUM149PT)),
-                    plot_grid(labels = c("NEFH"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$NEFH$TKOv1_pooled),
-                              plot_grid(list_plots$concave$NEFH$RPE1),
-                              plot_grid(list_plots$concave$NEFH$SUM149PT)),
-                    plot_grid(labels = c("TEKT4"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$TEKT4$SUM149PT)),
-                    plot_grid(labels = c("TIMM44"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$TIMM44$A549_TP53KO_HMCESwt),
-                              plot_grid(list_plots$concave$TIMM44$A549_TP53wt_HMCESwt)),
-                    plot_grid(labels = c("TSC22D4"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$TSC22D4$TKOv1_pooled),
-                              plot_grid(list_plots$concave$TSC22D4$RPE1),
-                              plot_grid(list_plots$concave$TSC22D4$HeLa)),
-                    plot_grid(labels = c("VOPP1"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$VOPP1$SUM149PT)),
-                    plot_grid(labels = c("WDR52"), nrow = 1, vjust = 3, hjust = -1,
-                              plot_grid(list_plots$concave$WDR52$RPE1))))
-# create common x and y labels
-y.grob <- textGrob("predicted sgRNA counts",
-                   gp=gpar(fontsize=8), rot=90)
-x.grob <- textGrob("time 0 - mid - late",
-                   gp=gpar(fontsize=8))
-# add to plot
-plotf = arrangeGrob(plots_hit_curves, left = y.grob, bottom = x.grob)
+# plot all plots with patchwork
+list_flattened = unlist(unlist(list_plots, recursive = F), recursive = F)
+plotf = wrap_plots(list_flattened)
 ggsave(plotf,
        filename = paste0(figDir, "plots_hit_curves.jpg"),
        device = "jpg",
