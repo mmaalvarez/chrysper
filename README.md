@@ -11,7 +11,7 @@ Literature: Tzelepis et al., 2016 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5
 MAIN INTEREST
 -------------
 
-Detect non-linear time trends for gene essentiality: this differs from classic gene essentiality analyses in that it could identify genes whose effect on fitness is non-monotonic (convex: V or concave: /\ ) <-- BETTER HOCKEY STICK \\_ , \_/ , ¯\ , /¯
+Detect non-linear time trends for gene essentiality: this differs from classic gene essentiality analyses in that it could identify genes whose effect on fitness is non-monotonic (convex: V or concave: /\ ) <-- BETTER HOCKEY STICK \\_  \_/  ¯\  /¯
 
 This uses untreated samples from each cell line separately, and finds gene-KOs with significant non-linearity for `counts ~ time + offset`. Currently 'time' is categorized into t0, t-mid, and t-late, with the default orthogonal polynomial contrasts (linear and quadratic) <-- CHANGE CONTRASTS
 
@@ -32,7 +32,7 @@ gene\*TP53\*time interactions
 `counts ~ time*TP53 + offset`
 
 e.g. -- TP53-/-
-     \_ TP53wt
+     \\_ TP53wt
 
 
 NOTES
