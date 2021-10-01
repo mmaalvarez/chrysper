@@ -5,6 +5,8 @@ Generalized Linear Model (Negative Binomial or Poisson)
 Regression: 
 `geneKO read counts ~ time + offset`
 
+Literature: Tzelepis et al., 2016 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5081405/
+
 
 MAIN INTEREST
 -------------
