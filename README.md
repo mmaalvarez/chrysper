@@ -9,7 +9,7 @@ Regression:
 MAIN INTEREST
 -------------
 
-Detect non-linear time trends for gene essentiality: this differs from classic gene essentiality analyses in that it could identify genes whose effect on fitness is non-monotonic (convex: V or concave: /\ ) <-- BETTER HOCKEY STICK /¯ \_
+Detect non-linear time trends for gene essentiality: this differs from classic gene essentiality analyses in that it could identify genes whose effect on fitness is non-monotonic (convex: V or concave: /\ ) <-- BETTER HOCKEY STICK \\_ /¯
 
 This uses untreated samples from each cell line separately, and finds gene-KOs with significant non-linearity for `counts ~ time + offset`. Currently 'time' is categorized into t0, t-mid, and t-late, with the default orthogonal polynomial contrasts (linear and quadratic) <-- CHANGE CONTRASTS
 
@@ -17,7 +17,7 @@ This uses untreated samples from each cell line separately, and finds gene-KOs w
 
 - FILTER2: hit overlap across cell lines (mean FDR <0.25) for that trend shape <-- MAYBE NOT NECESSARY, hits found in at least 1 cancer cell line is fine
 
-Draw predicted counts ~ time curves of gene hits
+Draw predicted `counts ~ time` curves of gene hits
 
 GO set enrichment of gene hits can provide more insights
 
