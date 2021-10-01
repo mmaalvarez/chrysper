@@ -1,4 +1,4 @@
-Change time contrasts from Linear-Quadratic (default) to Backward-difference, to look for "hockey-stick" trends: \_ _/ ¯\ /¯
+Change time contrasts from Linear-Quadratic (default) to Backward-difference, to look for "hockey-stick" trends: \_ , _/ , ¯\ , /¯
 
 	- example of how to set BACKWARD difference contrast matrices to use with time_cat in the regression
 
@@ -17,13 +17,13 @@ gen hit ascertainment
 
 	- less stringent: it's not necessary that a hit replicates across cell lines
 
-	- Instead of time.Q FDR<0.25, look for hockey-stick shape \_ _/ ¯\ /¯ 
+	- Instead of time.Q FDR<0.25, look for hockey-stick shape \_ , _/ , ¯\ , /¯ 
 
 		- e.g. time-mid vs. time0 β<0 (FDR<0.25) & time-late vs. time-mid β~0 (FDR>0.25) --> \_
 
 
 
-EXTRA LEVEL:
+NEXT STEP:
 
 gene*TP53*time interactions
 
