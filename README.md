@@ -31,8 +31,9 @@ gene\*TP53\*time interactions
 
 `counts ~ time*TP53 + offset`
 
-e.g. -- TP53-/-
-     \\_ TP53wt
+e.g. 
+-- TP53-/-
+\\_ TP53wt
 
 
 NOTES
