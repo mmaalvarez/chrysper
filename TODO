@@ -1,3 +1,6 @@
+Check whether HT29 data from Tzelepis et al is available, and add it to the analyses
+
+
 Change time contrasts from Linear-Quadratic (default) to Backward-difference, to look for "hockey-stick" trends: \_  _/  ¯\  /¯
 
 	- example of how to set BACKWARD difference contrast matrices to use with time_cat in the regression
