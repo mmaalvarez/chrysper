@@ -13,7 +13,7 @@ git config --global user.email "NAME.SURNAME@irbbarcelona.org" # your e-mail her
 cd PATH/TO/REPO/
 
 ### add all files with changes (can specify them one by one, as well)
-git add --all
+git add .
 
 ### call commit, with info of which are the changes
 git commit -m "I did this and that in there"
